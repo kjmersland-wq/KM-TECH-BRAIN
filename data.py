@@ -301,20 +301,25 @@ if __name__ == "__main__":
     a_imp.add_argument("--no-dedupe", action="store_true")
     a_imp.add_argument("--dry-run", action="store_true")
     a_st = sub.add_parser("stats", help="Vis statistikk / show dataset stats")
+    a_inbox = sub.add_parser("inbox", help="Importer alt i inbox/ (music/ og web/) / import everything in inbox/ (see ingest.py)")
+    a_inbox.add_argument("--init", action="store_true"); a_inbox.add_argument("--dry-run", action="store_true")
+    a_inbox.add_argument("--keep", action="store_true"); a_inbox.add_argument("--allow-new", action="store_true")
+    a_inbox.add_argument("--retrain", action="store_true"); a_inbox.add_argument("--inbox", default="inbox")
     for sp in (a_add, a_imp, a_st):
         sp.add_argument("--file", default="data/example_data.csv", help="Datafil / data file (csv or json)")
     ns = ap.parse_args()
     try:
+        if ns.cmd == "inbox":
+            from ingest import main as ingest_main
+            raise SystemExit(ingest_main(sys.argv[2:]))
         if ns.cmd == "add":
             add_example(ns.file, ns.text, ns.label)
             print(f"Lagt til / Added to {ns.file}: [{ns.label}] {ns.text}")
         elif ns.cmd == "import":
             recs = collect_examples(ns.source, ns.label, ns.unit, chunk_words=ns.chunk_words)
-            if ns.dry_run:
-                print(f"{len(recs)} eksempler funnet / found (dry run). Eksempel/sample: {recs[:2]}")
-            else:
-                added, skipped = add_examples(ns.file, recs, dedupe=not ns.no_dedupe)
-                print(f"Importert / Imported {added} -> {ns.file} (hoppet over {skipped} duplikater / skipped duplicates)")
+            from ingest import import_into, print_report  # oppsummering per kategori / per-category summary
+            rep = import_into(ns.file, recs, ns.dry_run, dedupe=not ns.no_dedupe)
+            print_report("import", rep, ns.dry_run)
         else:
             print(dataset_stats(load_records(ns.file)))
     except (FileNotFoundError, ValueError, KeyError) as e:

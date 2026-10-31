@@ -1,0 +1,16 @@
+text,label
+"Siden min vises ikke i Google selv om den har vært ute i tre uker, hva har jeg glemt?",SEO
+"How long should a page title be, and does the order of the words matter?",SEO
+"Sitemap og robots.txt: hva er forskjellen og trenger jeg begge?",SEO
+"Why does my React component re-render every time the parent updates?",Frontend
+"Hvordan får jeg en sticky header som ikke dekker innholdet når jeg hopper til et anker?",Frontend
+"Flexbox or grid for a three-column card layout that collapses on mobile?",Frontend
+"My API returns 500 when two users sign up at the exact same moment",Backend
+"Hvordan setter jeg opp en cron-jobb som rydder gamle sesjoner i databasen?",Backend
+"Should I paginate with offset or cursor when the table has millions of rows?",Backend
+"Stripe says the webhook signature is invalid, but the secret looks correct",Payments
+"Hvordan tar jeg betalt per måned og lar kundene si opp selv?",Payments
+"Customers get charged but the order never shows up in my database",Payments
+"Cloudflare Pages build fails with missing script build for a static site",Hosting
+"Hvordan kobler jeg et eget domene til prosjektet mitt på Vercel?",Hosting
+"Is it worth paying for a CDN if my site is mostly static?",Hosting

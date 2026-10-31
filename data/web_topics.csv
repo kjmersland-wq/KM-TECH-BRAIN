@@ -1,0 +1,61 @@
+text,label
+"Write a unique title tag under 60 characters for every page and put the main keyword near the front",SEO
+"Hvordan får jeg nettsiden min høyere opp på Google uten å betale for annonser?",SEO
+"Add a sitemap.xml and submit it in Google Search Console",SEO
+"Core Web Vitals: largest contentful paint is slow because the hero image is not compressed",SEO
+"A meta description is not a ranking factor, but it decides whether people click your result",SEO
+"Strukturerte data med JSON-LD gir rike resultater som stjerner og priser i søk",SEO
+"Internal links help Google understand which pages on your site matter most",SEO
+"Canonical tags stop duplicate content when the same page lives on several URLs",SEO
+"Backlinks from small relevant sites beat a few spammy links every time",SEO
+"Alt-tekst på bilder hjelper både synshemmede og bildesøk",SEO
+"My blog gets traffic but nobody reads past the first paragraph, how do I fix the intro?",SEO
+"Nøkkelordanalyse: finn ut hva folk faktisk skriver i søkefeltet før du lager innholdet",SEO
+"React useEffect runs twice in development with strict mode, is that a bug?",Frontend
+"Hvordan lager jeg en responsiv meny med CSS grid og flexbox uten å bruke et rammeverk?",Frontend
+"Tailwind classes get messy fast, how do you keep components readable?",Frontend
+"Next.js App Router: when should a component be a client component?",Frontend
+"Hydration mismatch error after adding a date to the page, what causes it?",Frontend
+"Knappen min ser riktig ut i Chrome men feil i Safari, hva er forskjellen?",Frontend
+"Lazy load images below the fold to speed up the first paint",Frontend
+"TypeScript says property does not exist on type, even though the API returns it",Frontend
+"Dark mode with CSS variables and prefers-color-scheme, no JavaScript needed",Frontend
+"State management: is Redux still worth it, or do hooks and context cover it?",Frontend
+"Vi bytter fra create-react-app til Vite fordi bygget tok flere minutter",Frontend
+"Accessible forms need labels, focus states and error messages that screen readers can read",Frontend
+"FastAPI endpoint returns a 422 validation error when the JSON body has an extra field",Backend
+"Hvordan lagrer jeg passord trygt? Bruk bcrypt eller argon2, aldri vanlig hash",Backend
+"A Postgres query is slow: add an index on the column you filter by and check EXPLAIN",Backend
+"CORS preflight request fails with 405 because the server does not handle OPTIONS",Backend
+"Rate limiting an API with Redis and a sliding window counter",Backend
+"Jeg trenger en jobbkø for å sende e-post i bakgrunnen uten å blokkere forespørselen",Backend
+"Prisma migrations fail in CI because the shadow database cannot be created",Backend
+"JWT or server-side sessions? Sessions are simpler to revoke",Backend
+"Webhook handlers must be idempotent because providers retry on failure",Backend
+"Node server memory keeps growing after each websocket connection closes",Backend
+"Structured JSON logging makes it easy to search errors across services",Backend
+"REST eller GraphQL for et lite prosjekt? Start enkelt med REST",Backend
+"Create the Stripe Checkout session on the server and redirect the customer to the hosted page",Payments
+"Hvordan tester jeg Stripe-betalinger uten ekte kort? Bruk testmodus og testkort",Payments
+"Verify the webhook signature before you mark an order as paid",Payments
+"Subscriptions with Stripe Billing: let the customer portal handle upgrades and cancellations",Payments
+"Vipps eller kort? Norske kunder forventer Vipps i nettbutikken",Payments
+"Refunds, disputes and chargebacks: keep clear order records and respond fast",Payments
+"Cart abandonment drops when you show shipping costs early and offer guest checkout",Payments
+"Moms i nettbutikken: Stripe Tax kan regne ut riktig sats per land",Payments
+"Handling failed payments: retry automatically and email the customer a link to update the card",Payments
+"Never store card numbers yourself, let Stripe Elements or Checkout handle them",Payments
+"Prising: årlig abonnement med rabatt gir mer forutsigbare inntekter",Payments
+"Idempotency keys stop a double click from charging the customer twice",Payments
+"Cloudflare Pages deploys a plain static folder with no build command, set the output directory to web",Hosting
+"Vercel is the simplest home for Next.js with server rendering and preview deployments",Hosting
+"Hvordan flytter jeg domenet til Cloudflare og setter opp DNS riktig?",Hosting
+"A Docker container exits immediately after start: check the logs and the CMD in the Dockerfile",Hosting
+"GitHub Actions workflow that runs tests and deploys on every push to main",Hosting
+"Environment variables belong in the host settings, never in the repository",Hosting
+"Sett opp HTTPS og automatisk fornyelse av sertifikat med Let's Encrypt",Hosting
+"Preview deployments for every pull request make code review much easier",Hosting
+"Edge functions run close to the user, but check which Node APIs they support",Hosting
+"Backups: automate database dumps and test restoring them at least once",Hosting
+"Next.js-bygget mitt feiler på Vercel med module not found, men fungerer lokalt",Hosting
+"Choosing between a VPS and a managed platform depends on how much ops work you want",Hosting

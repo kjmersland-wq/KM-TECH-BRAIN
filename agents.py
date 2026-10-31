@@ -24,7 +24,7 @@ import sys
 import zlib
 from collections import Counter, deque
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from data import tokenize
 from utils import say
@@ -100,7 +100,7 @@ class Memory:
     def is_followup(self, text: str) -> bool:
         """'mer', 'what about seo?', korte oppfølgere. / short follow-up messages."""
         low = text.lower().strip()
-        starts = ("more", "another", "and ", "also", "what about", "how about", "flere", "mer ", "og ",
+        starts = ("more", "another", "and ", "also", "what about", "how about", "flere", "mer ", "og ", "make it", "gjør den", "gjør det", "now ", "change ", "endre ", "legg til", "add ",
                   "hva med", "hvordan med", "ok", "okay", "ja", "yes", "men ")
         return bool(self.items) and (len(low.split()) <= 3 or low.startswith(starts))
 
@@ -225,6 +225,40 @@ GENRES["any"]["intro"] = L(
     "Tell me which genre you're curious about, blues, jazz or rock, and I'll give you a proper introduction.",
     "Si hvilken sjanger du er nysgjerrig på, blues, jazz eller rock, så gir jeg deg en ordentlig introduksjon.")
 
+CRAFT_TIPS = [  # (nøkkelord, tips): konkrete håndverksråd som slår inn før de generelle / specific craft advice beats the generic
+    (["harmonica", "munnspill", "harp", "harpe"],
+     L("For a blues in G, grab a C harp and play it in second position, cross harp. Bend by changing the shape of your mouth, not by blowing harder.",
+       "Til en blues i G tar du en C-harpe og spiller i andre posisjon, cross harp. Bend ved å endre formen på munnen, ikke ved å blåse hardere.")),
+    (["slide", "bottleneck"],
+     L("Keep the slide light on the string, right over the fret wire, and mute behind it with your other fingers. Intonation first, vibrato later.",
+       "Hold slidestålet lett mot strengen, rett over båndet, og demp bak det med de andre fingrene. Først tonetreff, så vibrato.")),
+    (["open g", "open d", "åpen g", "åpen d", "tuning", "stemming", "stemme gitar", "stemmer"],
+     L("Open G is D-G-D-G-B-D and open D is D-A-D-F#-A-D. Same shapes, different mood. Try both on one song and keep the one that sounds like you.",
+       "Åpen G er D-G-D-G-B-D og åpen D er D-A-D-F#-A-D. Samme grep, ulik stemning. Prøv begge på én låt og behold den som høres ut som deg.")),
+    (["riff", "distortion", "forvrengning", "overdrive", "amp ", "forsterker"],
+     L("Turn the gain down until you can hear every note, then bring it back up a notch. Most great riff tones are cleaner than you think.",
+       "Skru ned gainen til du hører hver tone, og skru den opp igjen en hakk. De fleste store riff-lydene er renere enn du tror.")),
+    (["improvis", "solo"],
+     L("Play less. Sing the line in your head first, then find it on the neck. The space between the notes is half the solo.",
+       "Spill mindre. Syng frasen i hodet først, og finn den så på gripebrettet. Pausene mellom tonene er halve soloen.")),
+    (["lyric", "tekst", "verse", "vers", "refreng", "chorus"],
+     L("Say the line out loud before you write it down. If you trip over it, so will the singer.",
+       "Si linjen høyt før du skriver den ned. Snubler du i den, gjør sangeren det også.")),
+]
+
+
+def craft_tip(text: str, lang: str) -> Optional[str]:
+    low = text.lower()
+    for kws, tip in CRAFT_TIPS:
+        if any(has_word(low, k) for k in kws):
+            return tip[lang]
+    return None
+
+
+WEB_HARD = ["seo", "stripe", "next.js", "nextjs", "checkout", "deploy", "cloudflare", "vercel", "nettside", "website",
+            "webshop", "nettbutikk", "hosting", "docker", "api", "css", "html", "react", "typescript", "javascript",
+            "domene", "domain", "sitemap", "wordpress", "webhook", "frontend", "backend"]
+
 LABEL_GENRE = {"Blues": "blues", "Jazz": "jazz", "Rock": "rock", "Blues/Roots": "blues"}  # modell-/biblioteklabel -> sjanger
 
 
@@ -269,7 +303,17 @@ class Agent:
         self.genre_brain = genre_brain  # valgfri sjanger-modell (models/genres.pth) / optional genre model
 
     def related(self, text: str, c: dict) -> List[dict]:
-        return []
+        """De mest like eksemplene i biblioteket ditt. / Most similar examples from your library."""
+        if not self.retriever:
+            return []
+        return self.retriever.similar(text, k=3, min_score=0.15)
+
+    def task_related(self, text: str, c: dict) -> List[str]:
+        hits = self.related(text, c)
+        if not hits:
+            return (["Fant ingenting som ligner i biblioteket ditt ennå. Legg til flere eksempler med python ingest.py."]
+                    if c["lang"] == "no" else ["Nothing close in your library yet. Add more examples with python ingest.py."])
+        return [f"[{h['label']}] {h['text']}" for h in hits]
 
     def keyword_score(self, text: str) -> float:
         low = text.lower()
@@ -375,10 +419,18 @@ class MusicAgent(Agent):
     def relevance(self, text: str, cls: Optional[dict] = None) -> float:
         """Sjangerord (jazz, Hendrix, Muddy ...) og biblioteket teller tungt, slik at musikk ikke
         havner hos WebAgent bare fordi kategorimodellen er usikker. / Genre words and the library count heavily."""
-        score = super().relevance(text, cls)
+        low = text.lower()
+        hard = any(has_word(low, w) for w in WEB_HARD)
+        # Med tekniske nøkkelord er kategorimodellens musikk-hint (Blues/Roots) ikke avgjørende
+        # With technical terms the model's music hint (Blues/Roots) must not decide it
+        score = self.keyword_score(text)
+        if cls and "label" in cls and not hard:
+            score += self.domains.get(cls["label"], 0.0) * cls["confidence"] * 2
         if genre_by_keywords(text):
-            score += 4
-        elif self.retriever:
+            # 'SEO for my blues blog' er et web-spørsmål om musikk, ikke et musikkspørsmål
+            # 'SEO for my blues blog' is a web question about music, not a music question
+            score += 1 if hard else 5
+        elif self.retriever and not hard:
             label, share = self.retriever.vote(text)
             if label in LABEL_GENRE and share >= 0.6:
                 score += 2
@@ -390,25 +442,15 @@ class MusicAgent(Agent):
         """Sjangeren styrer, men sterke signaler om penger/helse (f.eks. 'selge', 'vondt i hånda') får egne råd.
         Genre drives it, but a confident money/health signal gets its own advice."""
         conf = c["cls"]["confidence"] if c["cls"] else 0.0
+        tip = craft_tip(c["seed"], c["lang"])
+        if tip:
+            return tip
         if c["label"] in ("Business/Monetization", "Health/Productivity") and conf >= 0.7:
             return self.suggestions[c["label"]][c["lang"]]
         if c["genre"] != "any":
             return GENRES[c["genre"]]["next"][c["lang"]]
         s = self.suggestions.get(c["label"] or "")
         return s[c["lang"]] if s else None
-
-    def related(self, text: str, c: dict) -> List[dict]:
-        """De mest like eksemplene i biblioteket ditt. / Most similar examples from your library."""
-        if not self.retriever:
-            return []
-        return self.retriever.similar(text, k=3, min_score=0.15)
-
-    def task_related(self, text: str, c: dict) -> List[str]:
-        hits = self.related(text, c)
-        if not hits:
-            return (["Fant ingenting som ligner i biblioteket ditt ennå. Legg til flere eksempler med python data.py import."]
-                    if c["lang"] == "no" else ["Nothing close in your library yet. Add more examples with python data.py import."])
-        return [f"[{h['label']}] {h['text']}" for h in hits]
 
     def task_explain(self, text: str, c: dict) -> List[str]:
         return [GENRES[c["genre"]]["intro"][c["lang"]]]
@@ -494,12 +536,39 @@ class MusicAgent(Agent):
 
 # ------------------------------------------------------------------ WebAgent
 
+WEB_NEXT = {
+    "SEO": L("Pick one page and fix just that one: a title that says what it is, a single h1, and a meta description someone would actually click. Then leave it alone for two weeks.",
+             "Velg én side og fiks bare den: en tittel som sier hva siden er, én h1 og en metabeskrivelse noen faktisk vil klikke på. La den stå i fred i to uker etterpå."),
+    "Frontend": L("Get it working in the smallest component you can, then open it in a second browser. Most layout bugs show up the moment you do.",
+                  "Få det til å fungere i den minste komponenten du klarer, og åpne den i en annen nettleser. De fleste layoutfeil dukker opp med en gang."),
+    "Backend": L("Put a log line before and after the step that fails and reproduce it once. Nine times out of ten the log tells you more than the debugger does.",
+                 "Legg en loggmelding før og etter steget som feiler, og gjenskap feilen én gang. Ni av ti ganger forteller loggen deg mer enn debuggeren."),
+    "Payments": L("Run the whole flow once in test mode, including a failed payment, and look at what your webhook actually receives. That's where the surprises are.",
+                  "Kjør hele flyten én gang i testmodus, også en mislykket betaling, og se hva webhooken din faktisk mottar. Det er der overraskelsene sitter."),
+    "Hosting": L("Read the build log from the top, not the bottom. The real error is usually the first red line, and everything after it is fallout.",
+                 "Les byggloggen fra toppen, ikke bunnen. Den egentlige feilen er som regel den første røde linjen, og alt etter den er følgefeil."),
+}
+
+WEB_TOPIC_KW = {"SEO": ["seo", "sitemap", "meta description", "metabeskrivelse", "google search", "backlink", "søkemotor"],
+                "Payments": ["stripe", "checkout", "payment", "betaling", "vipps", "subscription", "abonnement", "webhook"],
+                "Hosting": ["deploy", "cloudflare", "vercel", "hosting", "docker", "dns", "domene", "domain", "github actions", "ci/cd"],
+                "Frontend": ["react", "css", "tailwind", "next.js", "nextjs", "html", "frontend", "component", "komponent"],
+                "Backend": ["api", "database", "postgres", "backend", "fastapi", "express", "prisma", "server"]}
+
+
+def web_topic_by_keywords(text: str) -> Optional[str]:
+    low = text.lower()
+    scores = {t: sum(has_word(low, k) for k in ks) for t, ks in WEB_TOPIC_KW.items()}
+    best = max(scores, key=scores.get)
+    return best if scores[best] > 0 else None
+
+
 class WebAgent(Agent):
     name = "web"
     description = "Web projects, SEO, Next.js, Stripe and technical decisions."
-    keywords = {"seo": 3, "next.js": 3, "nextjs": 3, "react": 2, "stripe": 3, "website": 2, "web": 1, "html": 1, "css": 1,
+    keywords = {"seo": 3, "next.js": 3, "nextjs": 3, "react": 2, "stripe": 3, "website": 3, "webshop": 3, "web": 1, "html": 1, "css": 1,
                 "deploy": 2, "cloudflare": 3, "vercel": 2, "api": 1, "checkout": 2, "payment": 2, "betaling": 2, "landing": 2,
-                "domain": 1, "domene": 1, "nettside": 2, "nettbutikk": 2, "javascript": 1, "typescript": 1, "database": 1,
+                "domain": 1, "domene": 1, "nettside": 3, "nettbutikk": 2, "webhook": 2, "frontend": 2, "backend": 2, "sitemap": 3, "javascript": 1, "typescript": 1, "database": 1,
                 "hosting": 2, "ssr": 2, "static": 1, "statisk": 1, "docker": 1, "bug": 1, "feil": 0.5}
     domains = {"Code/Tech": 2.5, "Business/Monetization": 1.5}
     task_triggers = {
@@ -520,6 +589,38 @@ class WebAgent(Agent):
         "Health/Productivity": L("Ship something small today and stop at a fixed time. Projects survive on rested people, not on all-nighters.",
                                  "Slipp noe lite ut i dag og slutt til et fast klokkeslett. Prosjekter overlever på uthvilte folk, ikke på netter uten søvn."),
     }
+
+    task_triggers["related"] = ["related", "similar", "lignende", "liknende", "more like", "mer som", "find examples", "finn eksempler"]
+
+    def relevance(self, text: str, cls: Optional[dict] = None) -> float:
+        """Tekniske nøkkelord (SEO, Stripe, deploy ...) er et sterkt signal. Kategorimodellen alene er det ikke:
+        uten nøkkelord teller den bare halvt. / Technical terms are a strong signal; the category model alone is a weak one."""
+        kw = self.keyword_score(text)
+        score = kw
+        if cls and "label" in cls:
+            score += self.domains.get(cls["label"], 0.0) * cls["confidence"] * 2 * (1.0 if kw else 0.5)
+        low = text.lower()
+        if any(has_word(low, w) for w in WEB_HARD):
+            score += 3
+        return score
+
+    def context(self, text: str, cls: Optional[dict], prev: Optional[dict], follow: bool) -> dict:
+        """Tema: nøkkelord først, så avstemning blant de mest like eksemplene. / Topic: keywords, then library vote."""
+        c = super().context(text, cls, prev, follow)
+        topic, how = web_topic_by_keywords(text), "keywords"
+        if not topic and self.retriever and not (follow and prev and len(text.split()) <= 3):
+            label, share = self.retriever.vote(text)
+            if label in WEB_NEXT and share >= 0.5:
+                topic, how = label, f"library {share:.0%}"
+        if not topic and follow and prev:
+            topic, how = prev.get("web_topic"), "memory"
+        c["web_topic"], c["topic_how"] = topic, (how if topic else None)
+        return c
+
+    def next_step(self, c: dict) -> Optional[str]:
+        if c.get("web_topic"):
+            return WEB_NEXT[c["web_topic"]][c["lang"]]
+        return super().next_step(c)
 
     def task_seo(self, text: str, c: dict) -> List[str]:
         lang = c["lang"]
@@ -597,6 +698,80 @@ class WebAgent(Agent):
 
 # ------------------------------------------------------------------ registry / router
 
+# ------------------------------------------------------------------ CodeAgent (lokal LLM / local LLM)
+
+CODE_PHRASES = [  # tydelige bestillinger av kode / clear requests for code
+    r"\bwrite (me )?(a|an|some)\b.{0,25}\b(function|script|class|component|api|route|endpoint|test|query|program|snippet|regex|hook|middleware|code)\b",
+    r"\b(write|generate|give me) (the )?code\b", r"\bcode example\b", r"\bimplement\b", r"\brefactor\b", r"\bunit tests? for\b",
+    r"\bskriv (meg )?(en|et|litt)\b.{0,25}\b(funksjon|script|klasse|komponent|rute|spørring|test|program|kode|regex)\b",
+    r"\b(lag|generer) (en|et|litt)\b.{0,25}\b(funksjon|script|klasse|komponent|rute|kode)\b", r"\bkodeeksempel\b", r"\bimplementer\b",
+]
+
+
+def split_answer(text: str) -> Tuple[str, str]:
+    """Del LLM-svaret i (kode, forklaring). Kodeblokkene beholdes uendret. / Split into (code, explanation)."""
+    blocks = re.findall(r"```[^\n]*\n(.*?)```", text, flags=re.S)
+    explanation = re.sub(r"```[^\n]*\n.*?```", "", text, flags=re.S).strip()
+    if not blocks:  # modellen glemte kodeblokk-formatet / the model skipped the fenced format
+        return text.strip(), ""
+    return "\n\n".join(b.rstrip() for b in blocks), explanation
+
+
+class CodeAgent(Agent):
+    """Enkel kodehjelper på en lokal LLM (Ollama). Ingen filendringer: du får kode og en kort forklaring.
+    Basic coding helper on a local LLM (Ollama). It never touches your files; you get code plus a short explanation."""
+    name = "code"
+    description = "Code generation with a local LLM through Ollama (python llm.py --models)."
+    task_triggers = {"generate": ["write", "implement", "skriv", "lag", "kode", "code"]}
+
+    SYSTEM = ("You are a careful senior software engineer helping on small projects. Reply in exactly this shape: "
+              "one fenced code block with the complete, runnable code (put the language name after the opening backticks), "
+              "then a short explanation of at most five sentences. Mention assumptions and anything that must be installed. "
+              "No filler such as 'Certainly' or 'Here is'. Do not invent library functions; if you are unsure about an API, "
+              "say so in the explanation. Write the explanation like a friendly colleague: plain, specific, natural. {lang}")
+
+    def __init__(self, brain=None, retriever=None, genre_brain=None):
+        super().__init__(brain, retriever, genre_brain)
+        self.history: List[dict] = []   # siste utveksling, så 'gjør den om til TypeScript' virker / last exchange for follow-ups
+        self._up: Optional[bool] = None
+        self.model_override: Optional[str] = None
+
+    def available(self) -> bool:
+        if self._up is None:
+            import llm
+            self._up = llm.is_running()
+        return self._up
+
+    def relevance(self, text: str, cls: Optional[dict] = None) -> float:
+        """Bare med tydelig kodebestilling, og bare hvis Ollama svarer. / Only for a clear code request and only if Ollama is up."""
+        low = text.lower()
+        if not any(re.search(p, low) for p in CODE_PHRASES):
+            return 0.0
+        return 12.0 if self.available() else 0.0
+
+    def run(self, text: str, task: Optional[str] = None, prev: Optional[dict] = None, follow: bool = False) -> dict:
+        import llm
+        lang = prev["lang"] if (follow and prev and len(text.split()) <= 3) else lang_of(text)
+        c = {"lang": lang, "topic": topic_of(text), "genre": "any", "label": None, "cls": None, "seed": text,
+             "web_topic": None, "genre_how": None, "topic_how": None}
+        res = {"agent": self.name, "lang": lang, "classification": None, "next": None, "unsure": None, "ctx": c,
+               "related": [], "tasks": ["generate"], "code": "", "explanation": "", "model": None}
+        try:
+            name, warn = llm.pick_model(llm.installed_models(), self.model_override)
+            sys_prompt = self.SYSTEM.format(lang="Write the explanation in natural Norwegian (bokmål)." if lang == "no"
+                                            else "Write the explanation in English.")
+            msgs = [{"role": "system", "content": sys_prompt}] + self.history[-4:] + [{"role": "user", "content": text}]
+            answer = llm.chat(msgs, name)
+        except llm.OllamaError as e:
+            res["sections"] = [("error", [str(e)])]
+            res["explanation"] = str(e)
+            return res
+        code, expl = split_answer(answer)
+        self.history = (self.history + [{"role": "user", "content": text}, {"role": "assistant", "content": answer}])[-4:]
+        res.update(code=code, explanation=expl, model=name, warning=warn, sections=[("code", [code]), ("explanation", [expl])])
+        return res
+
+
 REGISTRY: Dict[str, type] = {}
 
 
@@ -607,22 +782,29 @@ def register(cls: type) -> type:
 
 register(MusicAgent)
 register(WebAgent)
+register(CodeAgent)
 
 
 class Router:
     """Velger agent (modellens kategori + nøkkelord) og husker de siste meldingene.
     Picks the agent (model category + keywords) and remembers recent interactions."""
 
-    def __init__(self, brain=None, memory_size: int = 5, retriever=None, genre_brain=None):
+    def __init__(self, brain=None, memory_size: int = 5, retriever=None, genre_brain=None, retrievers=None):
         self.brain = brain
-        self.agents = {n: c(brain, retriever, genre_brain) for n, c in REGISTRY.items()}
+        libs = dict(retrievers or {})
+        if retriever is not None:
+            libs.setdefault("music", retriever)  # eldre kall / older call style
+        self.agents = {n: c(brain, libs.get(n), genre_brain if n == "music" else None) for n, c in REGISTRY.items()}
         self.memory = Memory(memory_size)
 
     def route(self, text: str) -> Agent:
         cls = self.brain.predict(text) if self.brain else None
         scores = {n: a.relevance(text, cls) for n, a in self.agents.items()}
         best = max(scores, key=scores.get)
-        if scores[best] < 1.0:
+        if scores[best] < 1.0 and any(re.search(p, text.lower()) for p in CODE_PHRASES):
+            raise LookupError("Dette ser ut som en kodebestilling, men Ollama svarer ikke. Start Ollama (se: python llm.py --models). "
+                              "[EN] This looks like a code request, but Ollama isn't responding. Start Ollama (see: python llm.py --models).")
+        if scores[best] < 1.0:  # for svakt signal -> ikke gjett / too weak a signal, don't guess
             raise LookupError("Fant ingen passende agent / no matching agent. Use --agent or --list.")
         return self.agents[best]
 
@@ -646,7 +828,7 @@ class Router:
         res["followup"] = bool(follow and prev)
         c = res["ctx"]
         self.memory.add(text=text, agent=chosen.name, tasks=res["tasks"], topic=c["topic"], genre=c["genre"],
-                        label=c["label"], lang=c["lang"])
+                        label=c["label"], lang=c["lang"], web_topic=c.get("web_topic"))
         return res
 
 
@@ -683,7 +865,22 @@ def load_genre_model(path: str):
         return None
 
 
+def show_code(res: dict) -> None:
+    """Kode vises urørt (ikke som punktliste), så den kan kopieres rett ut. / Code is printed untouched so you can copy it."""
+    no = res["lang"] == "no"
+    if res["code"]:
+        print(f"\n== code ({res['model']})" + (f"\n  ! {res['warning']}" if res.get("warning") else ""))
+        print("\n" + res["code"] + "\n")
+        if res["explanation"]:
+            print(f"{'Forklaring' if no else 'Explanation'}: {res['explanation']}")
+        print(f"\n{'Ingen filer er endret. Les gjennom og kjør koden selv; lokale modeller kan finne på funksjoner som ikke finnes.' if no else 'No files were changed. Read it and run it yourself; local models can invent functions that do not exist.'}")
+    else:
+        print(f"\n{res['explanation']}")
+
+
 def show(res: dict) -> None:
+    if res["agent"] == "code":
+        return show_code(res)
     c = res["classification"]
     # MusicAgent: sjangeren er hovedsignalet, den grove kategorimodellen vises bare når sjangeren er ukjent
     # MusicAgent: the genre is the main signal; the coarse category only shows when the genre is unknown
@@ -695,6 +892,8 @@ def show(res: dict) -> None:
     how = res["ctx"].get("genre_how")
     if res["agent"] == "music" and res["ctx"]["genre"] != "any":
         print(f"  {'sjanger' if res['lang'] == 'no' else 'genre'}: {res['ctx']['genre']} ({how or 'memory'})")
+    if res["agent"] == "web" and res["ctx"].get("web_topic"):
+        print(f"  {'tema' if res['lang'] == 'no' else 'topic'}: {res['ctx']['web_topic']} ({res['ctx']['topic_how']})")
     for task, lines in res["sections"]:
         print(f"  [{task}]")
         for line in lines:
@@ -707,9 +906,118 @@ def show(res: dict) -> None:
         print(f"  {'Neste steg' if res['lang'] == 'no' else 'Next step'}:\n    {res['next']}")
 
 
+def build_router(model: str = "models/brain.pth", music_library: str = "data/music_genres.csv",
+                 web_library: str = "data/web_topics.csv", genre_model: str = "models/genres.pth", quiet: bool = False) -> Router:
+    """Sett sammen alt som finnes lokalt; det som mangler hoppes over. / Assemble whatever exists locally."""
+    brain = load_brain(model) if Path(model).exists() or not quiet else None
+    return Router(brain, retrievers={"music": load_library(music_library), "web": load_library(web_library)},
+                  genre_brain=load_genre_model(genre_model))
+
+
+def brief(res: dict) -> None:
+    """Kort svar: kategori/sjanger, lignende fra dine data, og én naturlig tanke.
+    Short answer: category/genre, similar examples from your data, and one natural suggestion."""
+    if res["agent"] == "code":
+        return show_code(res)
+    no, c = res["lang"] == "no", res["ctx"]
+    if res["agent"] == "music" and c["genre"] != "any":
+        head = f"{'Sjanger' if no else 'Genre'}: {c['genre']} ({c.get('genre_how') or 'minne/memory'})"
+    elif res["agent"] == "web" and c.get("web_topic"):
+        head = f"{'Tema' if no else 'Topic'}: {c['web_topic']} ({c['topic_how']})"
+    elif res["classification"]:
+        k = res["classification"]
+        head = f"{'Kategori' if no else 'Category'}: {k['label']} ({k['confidence']:.0%})"
+    else:
+        head = f"{'Agent' if no else 'Agent'}: {res['agent']}"
+    print(f"\n  {head}  ·  agent: {res['agent']}")
+    if res["unsure"]:
+        print(f"  ? {res['unsure']}")
+    if res.get("related"):
+        print(f"  {'Likt i dataene dine' if no else 'Close to this in your data'}:")
+        for h in res["related"]:
+            print(f"    {h['score']:.2f} [{h['label']}] {h['text'][:95]}")
+    elif res["agent"] in ("music", "web"):
+        print(f"  {'Ingenting likt i dataene dine ennå.' if no else 'Nothing close in your data yet.'}")
+    if res["next"]:
+        print(f"\n  {'Min tanke' if no else 'My take'}: {res['next']}")
+    if res["agent"] == "music" and c["genre"] != "any":
+        tip = pick(GENRES[c["genre"]]["listen"], c["seed"], 1)[0][res["lang"]]
+        print(f"  {'Lytt til' if no else 'Listen to'}: {tip}")
+    print(f"\n  ({'skriv «mer» for hele svaret' if no else 'type \"more\" for the full answer'})")
+
+
+# Rutingtest: (tekst, forventet agent). Fanger feil som 'SEO for bluesbloggen' -> musikk.
+ROUTING_PROBES = [
+    ("ideas for a blues blog", "music"), ("Hva er jazz egentlig?", "music"), ("recommend some rock to listen to", "music"),
+    ("slide i åpen G på en gammel resonator", "music"), ("Stones' basement record, anything like it?", "music"),
+    ("lyrics: I woke up this morning, my baby was gone", "music"), ("metadata for my new jazz song", "music"),
+    ("Hendrix vs Van Halen tapping", "music"), ("playlist for a rainy Sunday, jazz", "music"),
+    ("Spotify release checklist for my band", "music"), ("anbefal noe blues å lytte til", "music"),
+    ("SEO checklist for my website", "web"), ("stripe checkout for my webshop", "web"), ("Next.js app router vs pages", "web"),
+    ("hvordan deployer jeg på Cloudflare Pages", "web"), ("CORS error from my FastAPI backend", "web"),
+    ("vercel or cloudflare for hosting", "web"), ("Docker container exits immediately", "web"),
+    ("nettbutikk med Stripe og Next.js", "web"), ("SEO for my blues blog", "web"), ("sell my guitar lessons with Stripe", "web"),
+    ("build a website for my jazz band", "web"), ("bandet vårt trenger en nettside", "web"), ("SEO for bluesbloggen min", "web"),
+]
+
+
+def routing_check(router: Router) -> int:
+    bad = 0
+    for text, want in ROUTING_PROBES:
+        try:
+            got = router.route(text).name
+        except LookupError:
+            got = "none"
+        if got != want:
+            print(f"RUTING/ROUTING: '{text}' -> {got} (ventet/expected {want})")
+            bad += 1
+    print(f"Rutingtest: {len(ROUTING_PROBES) - bad}/{len(ROUTING_PROBES)} riktige / routing check: {len(ROUTING_PROBES) - bad}/{len(ROUTING_PROBES)} correct")
+    return bad
+
+
+def code_check() -> int:
+    """CodeAgent uten ekte Ollama: kanned svar, feilvei og ruting. / CodeAgent without real Ollama: canned answer, error path, routing."""
+    import llm
+    saved = (llm.installed_models, llm.chat, llm.hardware)
+    bad = 0
+
+    def check(name: str, cond: bool) -> None:
+        nonlocal bad
+        print(f"  {'OK ' if cond else 'FEIL/FAIL'} CodeAgent: {name}")
+        bad += 0 if cond else 1
+
+    try:
+        llm.hardware = lambda: {"ram_gb": 32.0, "free_gb": 20.0, "vram_gb": 0.0, "gpu": ""}
+        llm.installed_models = lambda: ["qwen2.5-coder:7b"]
+        llm.chat = lambda msgs, model, *a, **k: "```ts\nexport const x = 1;\n```\nThis exports x."
+        agent = CodeAgent()
+        res = agent.run("Write a function that returns one")
+        check("splits code and explanation", res["code"] == "export const x = 1;" and "exports x" in res["explanation"])
+        check("remembers the last exchange", len(agent.history) == 2)
+        agent._up = True
+        r = Router(None)
+        r.agents["code"]._up = True
+        check("routes clear code requests", r.route("Write a clean Next.js API route that returns JSON").name == "code")
+        check("does not steal music", r.route("write about my favourite blues records").name != "code")
+        agent2 = CodeAgent()
+        agent2._up = False
+        check("stays out of routing when Ollama is down", agent2.relevance("Write a function that sorts") == 0.0)
+
+        def down():
+            raise llm.OllamaNotRunning(llm.NOT_RUNNING.format(h=llm.host()))
+        llm.installed_models = down
+        err = CodeAgent().run("Write a function")
+        check("clear message when Ollama is down", "ollama.com/download" in err["explanation"] and not err["code"])
+    finally:
+        llm.installed_models, llm.chat, llm.hardware = saved
+    return bad
+
+
 def selftest() -> int:
-    """Kjør alle oppgaver på norsk og engelsk og se etter typisk AI-språk. / Style check for stock AI phrasing."""
+    """Kjør alle oppgaver på norsk og engelsk og se etter typisk AI-språk, og sjekk rutingen.
+    Style check for stock AI phrasing, plus a routing check (with models/libraries if they exist)."""
     router = Router(None)
+    routing_bad = routing_check(build_router(quiet=True)) + routing_check(Router(None)) + code_check()
     probes = ["blues slide guitar ideas", "idéer til en bluesblogg om slide", "jazz listen recommend", "anbefal rock å lytte til",
               "I woke up this morning; I woke up this morning; blues walking like a man", "metadata for en jazzlåt",
               "seo checklist", "seo for nettsiden min", "stripe checkout", "stripe betaling", "next.js app router", "next.js på norsk",
@@ -720,12 +1028,14 @@ def selftest() -> int:
         blob = " ".join(l for _, ls in r["sections"] for l in ls).lower()
         blob += " " + " ".join(t[lang].lower() for g in GENRES.values() for key in ("listen", "hooks") for t in g[key] for lang in ("en", "no"))
         blob += " " + " ".join(g["intro"][lang].lower() for g in GENRES.values() for lang in ("en", "no"))
+        blob += " " + " ".join(t[lang].lower() for _, t in CRAFT_TIPS for lang in ("en", "no"))
+        blob += " " + " ".join(t[lang].lower() for t in WEB_NEXT.values() for lang in ("en", "no"))
         for b in BANNED:
             if b in blob:
                 print(f"STIL/STYLE: '{b}' in output for: {q}")
                 bad += 1
     print("Stiltest OK / style test OK" if not bad else f"{bad} treff / hits")
-    return 1 if bad else 0
+    return 1 if (bad or routing_bad) else 0
 
 
 def main(argv=None) -> int:
@@ -736,6 +1046,7 @@ def main(argv=None) -> int:
     p.add_argument("--model", default="models/brain.pth")
     p.add_argument("--library", default="data/music_genres.csv",
                    help="Eksempler MusicAgent søker i / examples MusicAgent searches (python retrieve.py)")
+    p.add_argument("--web-library", default="data/web_topics.csv", help="Eksempler WebAgent søker i / examples WebAgent searches")
     p.add_argument("--genre-model", default="models/genres.pth", help="Valgfri sjangermodell / optional genre model")
     p.add_argument("--list", action="store_true")
     p.add_argument("--interactive", action="store_true", help="Samtale med minne / conversation with memory")
@@ -749,7 +1060,7 @@ def main(argv=None) -> int:
             print(f"{n:8} {c.description}\n         tasks: {', '.join(c.task_triggers)}")
         return 0
 
-    router = Router(load_brain(a.model), retriever=load_library(a.library), genre_brain=load_genre_model(a.genre_model))
+    router = build_router(a.model, a.library, a.web_library, a.genre_model)
 
     def go(text: str) -> None:
         try:

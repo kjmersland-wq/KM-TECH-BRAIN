@@ -13,6 +13,11 @@ Fullt offline. Ingen API-er, ingen kreditter. / Fully offline. No APIs, no credi
 | `agents.py` | Lokale agenter (`MusicAgent`, `WebAgent`) som bruker modellen + innebygd fagkunnskap. | Local agents (`MusicAgent`, `WebAgent`) using the model + built-in domain know-how. |
 | `web/` | Statisk landingsside (HTML/CSS/JS) klar for Cloudflare Pages. | Static landing page (HTML/CSS/JS), ready for Cloudflare Pages. |
 | `embeddings.py` | Encodere: `hashed` (lettvekts) og `pretrained` (sentence-transformers), med fallback. | Encoders: `hashed` (lightweight) and `pretrained` (sentence-transformers), with fallback. |
+| `ask.py` | Enkleste inngang: sjanger/tema + lignende eksempler + kort tanke. | Easiest entry point: genre/topic + similar examples + a short take. |
+| `ingest.py` | Slipp filer i `inbox/` og importer med oppsummering. | Drop files in `inbox/` and import with a summary. |
+| `llm.py` | Klient for lokal LLM via Ollama (modellvalg, anbefaling, test). | Client for a local LLM via Ollama (model choice, recommendation, test). |
+| `data/web_topics.csv` | 60 håndskrevne web-eksempler: SEO, Frontend, Backend, Payments, Hosting. | 60 hand-written web examples. |
+| `data/eval_web.csv` | 15 testtekster for web, ikke i treningsdata. | 15 web test texts, not in the training data. |
 | `retrieve.py` | Finn lignende eksempler i biblioteket ditt (embeddings + cosinus). | Find similar examples in your library (embeddings + cosine). |
 | `data/music_genres.csv` | 84 håndskrevne musikkeksempler: Blues, Jazz, Rock, Other (norsk + engelsk). | 84 hand-written music examples: Blues, Jazz, Rock, Other (Norwegian + English). |
 | `data/eval_music.csv` | 24 testtekster for sjanger, ikke i treningsdata. | 24 genre test texts, not in the training data. |
@@ -199,3 +204,97 @@ res = router.run("more")                         # oppfølger / follow-up, bruke
 
 Ny agent / New agent: subclass `Agent` i `agents.py`, sett `name`, `keywords`, `domains`, `task_triggers`, `suggestions`, legg til `task_<navn>(self, text, c)`-metoder og kall `register(MinAgent)`. /
 Subclass `Agent`, set the attributes, add `task_<name>(self, text, c)` methods, call `register(MyAgent)`.
+
+
+## Daglig bruk / Everyday use
+
+Det enkleste: **`python ask.py`**. Skriv et spørsmål eller en tekst på norsk eller engelsk, og få sjanger eller tema, lignende eksempler fra dine egne data og en kort tanke. /
+The easiest way: **`python ask.py`**. Type a question or text in Norwegian or English and get the genre or topic, similar examples from your own data, and a short take.
+
+```bash
+python ask.py "slide i åpen D på en gammel resonator"      # ett spørsmål / one question
+python ask.py                                               # samtale med minne / conversation with memory
+python ask.py --full "ideas for a jazz blog"                # hele agentsvaret / the agent's full answer
+```
+I samtalen: `mer` / `more` gir hele svaret, `/historikk` viser minnet, `/glem` tømmer det, tom linje avslutter. Oppfølgere som «hva med SEO for den?» husker temaet. /
+In the conversation: `more` gives the full answer, `/history` shows memory, `/reset` clears it, an empty line quits.
+
+## Legg inn dine egne tekster / Adding your own real texts (the easy way)
+
+1. Lag mappene én gang / create the folders once: `python ingest.py --init`
+2. Slipp filene (`.txt`, `.md`, `.csv`, `.json`) i riktig undermappe / drop files in the right subfolder. Mappenavnet er kategorien / the folder name is the category:
+   ```
+   inbox/music/Blues/    inbox/music/Jazz/    inbox/music/Rock/    inbox/music/Other/
+   inbox/web/SEO/   inbox/web/Frontend/   inbox/web/Backend/   inbox/web/Payments/   inbox/web/Hosting/
+   ```
+3. Kjør / run: `python ingest.py` (eller / or `python data.py inbox`). Vil du se først / preview first: `--dry-run`.
+
+Du får en oppsummering per bibliotek og kategori: lagt til, duplikater, for korte, og totalen. Små skrivefeil i mappenavn rettes eller flagges («Jaz» → mente du «Jazz»?). Ferdige filer flyttes til `inbox/_imported/` (`--keep` for å la dem ligge). Nye kategorier krever `--allow-new`. /
+You get a summary per library and category: added, duplicates, too short, and the total. Typos in folder names are caught ("Jaz" → did you mean "Jazz"?). Done files move to `inbox/_imported/`.
+
+Hvordan en fil deles opp / how a file is split:
+
+| Filen ser slik ut / The file looks like | Resultat / Result |
+|---|---|
+| `navn.lines.txt` | én tekst per linje / one example per line |
+| blanke linjer mellom avsnitt / blank lines between paragraphs | ett eksempel per avsnitt (bra for tekststrofer / good for lyric stanzas) |
+| kort fil, ca. 120 ord eller mindre / short file | hele filen er ett eksempel / the whole file is one example |
+| lang fil / long file | biter på ca. 60 ord ved setningsgrenser / ~60-word chunks |
+| direkte i `inbox/music/` med linjer `Jazz<TAB>tekst` eller `Jazz \| tekst` | kategorien står på linjen / the category is on the line |
+
+`python ingest.py --retrain` trener sjangermodellen på nytt etterpå. Søk og agenter bruker de nye eksemplene med en gang uten trening. /
+`--retrain` retrains the genre model afterwards. Search and agents use new examples immediately, without training.
+
+Bibliotekene / the libraries: `data/music_genres.csv` (Blues, Jazz, Rock, Other) og / and `data/web_topics.csv` (SEO, Frontend, Backend, Payments, Hosting). Testsett som ikke brukes til trening / held-out test sets: `data/eval_music.csv`, `data/eval_web.csv`. kNN-treff / kNN accuracy (`python retrieve.py --data ... --eval ...`): musikk 71 % (24 tekster), web 53 % (15 tekster). Små, støyende tall; web er svakest og trenger flere ekte eksempler / music 71% (24 texts), web 53% (15 texts). Small, noisy numbers; web is weakest and needs more real examples.
+
+Ruting mellom agentene / routing: `python agents.py --selftest` kjører 24 rutingtester (norsk og engelsk, med og uten modeller) pluss stilsjekken. Tekniske ord som SEO, Stripe og deploy trumfer sjangerord, så «SEO for bluesbloggen min» går til WebAgent og «slide i åpen G» til MusicAgent. De 24 testsetningene er de jeg justerte mot, så de er en regresjonssjekk, ikke et uavhengig mål. /
+24 routing probes (Norwegian and English, with and without models) plus the style check. Technical terms beat genre words. Those probes are the ones I tuned against, so they are a regression check, not an independent measure.
+
+## Lokal kode-LLM / Local code LLM (Ollama)
+
+`CodeAgent` bruker en modell som kjører lokalt i [Ollama](https://ollama.com). Alt blir på maskinen din, ingen skytjenester, ingen kreditter. /
+`CodeAgent` uses a model running locally in Ollama. Everything stays on your machine.
+
+**1. Installer Ollama / Install Ollama.** Last ned fra https://ollama.com/download (Windows: kjør installasjonsprogrammet; Ollama starter i bakgrunnen og lytter på `http://localhost:11434`). Alternativt i terminal: `winget install Ollama.Ollama`. /
+Download it from https://ollama.com/download; it then runs in the background on `http://localhost:11434`.
+
+**2. Se hva som passer din maskin / see what fits your machine:**
+```bash
+python llm.py --models
+```
+Viser RAM og GPU, hva som er installert, og sterkeste modell som passer. Rekkefølgen jeg prøver / the order it tries: `qwen2.5-coder:14b` → `qwen2.5-coder:7b` → `deepseek-coder-v2` → `llama3.1`, og to små reserver / plus two small fallbacks (`qwen2.5-coder:3b`, `:1.5b`) for svake maskiner / for weak machines.
+
+**3. Last ned en modell / pull a model** (kun første gang, stor nedlasting / one-time, large download):
+```bash
+ollama pull qwen2.5-coder:7b       # ca. 4,7 GB. Bruk :14b (ca. 9 GB) hvis du har 16 GB RAM eller 10+ GB VRAM
+ollama pull qwen2.5-coder:3b       # ca. 1,9 GB, raskere og lettere, men svakere / faster and lighter, but weaker
+```
+
+**4. Test / test:**
+```bash
+python llm.py "Write a clean Next.js API route that returns JSON"
+python llm.py --model qwen2.5-coder:3b "Write a debounce function in TypeScript"
+python llm.py --selftest            # tester klienten mot en lokal stub, uten Ollama / tests the client against a local stub
+```
+Modellvalg / model choice: `--model`, ellers miljøvariabelen `KMBRAIN_MODEL`, ellers automatisk. Annen adresse: `OLLAMA_HOST`. Kjører ikke Ollama, får du en klar melding med hva du skal gjøre. /
+Model: `--model`, else `KMBRAIN_MODEL`, else automatic. Other address: `OLLAMA_HOST`. If Ollama isn't running you get a clear message.
+
+**5. CodeAgent:**
+```bash
+python agents.py --agent code "Write a clean Next.js API route that returns JSON"
+python ask.py --agent code "Skriv en funksjon som validerer et norsk telefonnummer"
+python ask.py --agent code          # samtale: «gjør den om til TypeScript» bygger på forrige svar / follow-ups build on the last answer
+```
+Du får kode og en kort forklaring (på språket du skriver). **Ingen filer endres.** Tydelige kodebestillinger («write a function…», «skriv en funksjon…») rutes automatisk til CodeAgent når Ollama kjører; ellers bruk `--agent code`. /
+You get code plus a short explanation. **No files are changed.** Clear code requests are routed to CodeAgent automatically when Ollama is running.
+
+### Realistiske forventninger / Realistic expectations
+
+* **Bra nok til mye:** små funksjoner, regex, SQL, enkle API-ruter, boilerplate, omskriving mellom språk, forklaring av kode. Alt kjører lokalt og gratis. /
+  **Good enough for plenty:** small functions, regex, SQL, simple API routes, boilerplate, translating between languages, explaining code.
+* **Ikke på Claude-nivå:** de lokale modellene er mye mindre. Forvent svakere resonnering på flerfils-design og subtile feil, utdaterte eller oppdiktede API-er (spesielt nye versjoner av rammeverk som Next.js), og kortere effektiv kontekst. `qwen2.5-coder:14b` er merkbart bedre enn `7b`, og begge ligger et godt stykke under Claude. Les og kjør alltid koden selv. /
+  **Not Claude-level:** these models are far smaller. Expect weaker reasoning on multi-file design and subtle bugs, outdated or invented APIs (especially recent framework versions), and shorter useful context. Always read and run the code yourself.
+* **Hastighet:** avhenger av maskinen. Uten stor GPU kjører modellen på CPU, og et svar på 40 linjer kan ta flere minutter med 7B. Første spørsmål er tregest fordi modellen lastes inn. /
+  **Speed** depends on the machine; on CPU a 40-line answer can take minutes with a 7B model, and the first question is slowest because the model loads.
+* **På denne maskinen / on this machine** (7,9 GB RAM, GTX 1050 med 2 GB VRAM, i3-10100F): `14b` og `deepseek-coder-v2` er for store. `qwen2.5-coder:7b` er den sterkeste som i det hele tatt går, men det blir trangt og tregt (CPU, lite ledig RAM). `qwen2.5-coder:3b` er det trygge valget. Dette er en vurdering ut fra størrelser og maskinvare, ikke en måling med en ekte modell. /
+  `14b` and `deepseek-coder-v2` are too big. `7b` is the strongest that runs at all, tight and slow; `3b` is the safe choice. This is an estimate from sizes and hardware, not a measurement with a real model.
