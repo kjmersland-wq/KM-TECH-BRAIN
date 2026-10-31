@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KM-TECH BRAIN — a local, offline AI brain</title>
+  <meta name="description" content="KM-TECH BRAIN is a local, offline AI brain built with PyTorch, focused on modern music and advanced web projects. No cloud, no APIs, no credits.">
+  <meta name="theme-color" content="#0b0f14">
+  <meta property="og:title" content="KM-TECH BRAIN">
+  <meta property="og:description" content="A local, offline AI brain built with PyTorch for music and web projects.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="nav">
+    <a class="brand" href="#top"><span class="dot"></span>KM-TECH BRAIN</a>
+    <nav>
+      <a href="#what">What</a>
+      <a href="#focus">Focus</a>
+      <a href="#how">How it works</a>
+      <a href="#status">Status</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <p class="eyebrow">Local &middot; Offline &middot; PyTorch</p>
+      <h1>An AI brain that lives on <span class="accent">your machine</span>.</h1>
+      <p class="lead">KM-TECH BRAIN is a small, specialized neural network you train yourself and run completely offline.
+        No cloud, no API keys, no credits &mdash; just your data and your hardware.</p>
+      <div class="cta">
+        <a class="btn primary" href="#how">See how it works</a>
+        <a class="btn" href="https://github.com/kjmersland-wq/KM-TECH-BRAIN" rel="noopener">View on GitHub</a>
+      </div>
+    </section>
+
+    <section id="what" class="reveal">
+      <h2>What it is</h2>
+      <div class="grid two">
+        <p>KM-TECH BRAIN is a text-understanding model built from scratch with PyTorch. You give it labeled examples,
+          it learns your categories, and it classifies new text with a confidence score &mdash; all on your own computer.</p>
+        <div class="card note">
+          <h3>What it is not</h3>
+          <p>It is <strong>not</strong> a general chatbot and does not compete with ChatGPT. It is a focused tool:
+            smaller, private, fast, and tuned to the fields you care about.</p>
+        </div>
+      </div>
+      <ul class="pills">
+        <li>100% offline</li><li>Zero external APIs</li><li>Your data stays yours</li><li>Norwegian + English</li>
+      </ul>
+    </section>
+
+    <section id="focus" class="reveal">
+      <h2>Current focus areas</h2>
+      <div class="grid two">
+        <article class="card">
+          <h3>Music</h3>
+          <p>Blues and roots first, then modern music. Lyrics analysis, metadata and tags, content ideas and
+            categorization of music-related text.</p>
+          <p class="tag">MusicAgent</p>
+        </article>
+        <article class="card">
+          <h3>Web</h3>
+          <p>Advanced web projects: SEO, Next.js, Stripe, hosting and technical decisions, with checklists you can
+            apply right away.</p>
+          <p class="tag">WebAgent</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="how" class="reveal">
+      <h2>How it works</h2>
+      <ol class="steps">
+        <li>
+          <h3>1. Train locally</h3>
+          <p>Add labeled examples to a CSV or JSON file, then train. Early stopping and checkpointing keep the best model.</p>
+          <div class="code"><code>python train.py</code><button class="copy" data-copy="python train.py">Copy</button></div>
+        </li>
+        <li>
+          <h3>2. Predict</h3>
+          <p>Load the saved <code>.pth</code> and classify any text, one at a time or in batches, with confidence.</p>
+          <div class="code"><code>python predict.py "slide guitar in open G"</code><button class="copy" data-copy='python predict.py "slide guitar in open G"'>Copy</button></div>
+        </li>
+        <li>
+          <h3>3. Use agents</h3>
+          <p>Agents combine the model with built-in know-how to produce ideas, checklists and analyses.</p>
+          <div class="code"><code>python agents.py "SEO checklist for my Next.js shop"</code><button class="copy" data-copy='python agents.py "SEO checklist for my Next.js shop"'>Copy</button></div>
+        </li>
+      </ol>
+    </section>
+
+    <section id="status" class="reveal">
+      <h2>Status &amp; next steps</h2>
+      <div class="grid two">
+        <div class="card">
+          <h3>Working now</h3>
+          <ul class="checks done">
+            <li>PyTorch classifier with embeddings, Dropout and BatchNorm</li>
+            <li>Training with AdamW, scheduler, early stopping</li>
+            <li>CLI for training and prediction</li>
+            <li>MusicAgent and WebAgent (local, rule-based)</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Next</h3>
+          <ul class="checks">
+            <li>Larger, real labeled datasets for music and web</li>
+            <li>More agents (SEO audits, release planning)</li>
+            <li>Better text representations (pre-trained embeddings)</li>
+            <li>Evaluation reports per category</li>
+          </ul>
+        </div>
+      </div>
+      <p class="muted">Early project &mdash; accuracy depends on how much real data you train it on.</p>
+    </section>
+  </main>
+
+  <footer>
+    <p>&copy; <span id="year">2026</span> KM-TECH BRAIN &middot; Built to run on your own machine.</p>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
