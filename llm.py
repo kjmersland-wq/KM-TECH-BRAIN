@@ -52,6 +52,23 @@ NOT_RUNNING = ("Ollama kjører ikke på {h}. Start Ollama-appen (eller kjør 'ol
                "    [EN] Ollama is not running on {h}. Start the Ollama app (or run 'ollama serve' in a terminal). "
                "Not installed? Get it from https://ollama.com/download")
 
+NOT_INSTALLED = ("Ollama er ikke installert. Installer: winget install Ollama.Ollama (eller https://ollama.com/download), "
+                 "åpne et NYTT terminalvindu og kjør: ollama pull qwen2.5-coder:3b\n"
+                 "    [EN] Ollama is not installed. Install: winget install Ollama.Ollama (or https://ollama.com/download), "
+                 "open a NEW terminal window and run: ollama pull qwen2.5-coder:3b")
+
+
+def ollama_installed() -> bool:
+    if shutil.which("ollama"):
+        return True
+    local = os.environ.get("LOCALAPPDATA", "")
+    return bool(local) and os.path.exists(os.path.join(local, "Programs", "Ollama", "ollama.exe"))
+
+
+def down_message() -> str:
+    """Skiller 'ikke installert' fra 'kjører ikke'. / Tells 'not installed' apart from 'not running'."""
+    return NOT_RUNNING.format(h=host()) if ollama_installed() else NOT_INSTALLED
+
 
 # ------------------------------------------------------------------ HTTP
 
@@ -65,7 +82,7 @@ def _open(path: str, payload: Optional[dict] = None, timeout: float = 5.0):
         body = e.read().decode("utf-8", "replace")
         raise OllamaError(f"Ollama svarte {e.code} / Ollama answered {e.code}: {body[:200]}") from e
     except (urllib.error.URLError, ConnectionError, TimeoutError, OSError) as e:
-        raise OllamaNotRunning(NOT_RUNNING.format(h=host())) from e
+        raise OllamaNotRunning(down_message()) from e
 
 
 def is_running(timeout: float = 0.7) -> bool:
@@ -230,7 +247,7 @@ def show_models() -> int:
         running = True
     except OllamaNotRunning:
         have, running = [], False
-        print(NOT_RUNNING.format(h=host()))
+        print(down_message())
     if running:
         print(f"Installert / Installed: {', '.join(have) or '(ingen/none)'}")
     print("\nAnbefalt rekkefølge / Preferred order (fit = passer denne maskinen / fits this machine):")

@@ -712,6 +712,7 @@ def split_answer(text: str) -> Tuple[str, str]:
     """Del LLM-svaret i (kode, forklaring). Kodeblokkene beholdes uendret. / Split into (code, explanation)."""
     blocks = re.findall(r"```[^\n]*\n(.*?)```", text, flags=re.S)
     explanation = re.sub(r"```[^\n]*\n.*?```", "", text, flags=re.S).strip()
+    explanation = re.sub(r"^(\*\*)?(explanation|forklaring)\s*:?(\*\*)?\s*:?\s*", "", explanation, flags=re.I)  # modellen skriver ofte selv «Explanation:»
     if not blocks:  # modellen glemte kodeblokk-formatet / the model skipped the fenced format
         return text.strip(), ""
     return "\n\n".join(b.rstrip() for b in blocks), explanation

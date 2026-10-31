@@ -279,6 +279,27 @@ python llm.py --selftest            # tester klienten mot en lokal stub, uten Ol
 Modellvalg / model choice: `--model`, ellers miljøvariabelen `KMBRAIN_MODEL`, ellers automatisk. Annen adresse: `OLLAMA_HOST`. Kjører ikke Ollama, får du en klar melding med hva du skal gjøre. /
 Model: `--model`, else `KMBRAIN_MODEL`, else automatic. Other address: `OLLAMA_HOST`. If Ollama isn't running you get a clear message.
 
+**Kort oppsummert (Windows) / In short (Windows):**
+```bash
+winget install Ollama.Ollama          # installer / install, så et NYTT terminalvindu / then open a NEW terminal
+ollama pull qwen2.5-coder:3b          # ca. 2 GB, kun første gang / about 2 GB, one time only
+python llm.py --models                # sjekk at den ses / check it shows up
+```
+Får du «Ollama er ikke installert» eller «kjører ikke», sier meldingen hva du skal gjøre. Starter ikke Ollama av seg selv: åpne Ollama fra Start-menyen eller kjør `ollama serve`. /
+If you see "not installed" or "not running", the message tells you what to do. If Ollama doesn't start by itself, open it from the Start menu or run `ollama serve`.
+
+**Tre eksempler / three examples:**
+```bash
+python agents.py --agent code "Write a Python function that checks if a string is a valid Norwegian phone number"
+python agents.py --agent code "Write a clean Next.js API route that returns JSON"
+python agents.py --agent code "Fix this bug: def avg(xs): return sum(xs)/len(xs) crashes on an empty list"
+```
+Første spørsmål er tregest fordi modellen lastes inn. Målt på denne PC-en (i3-10100F, 8 GB RAM, CPU) tok det første svaret fra `qwen2.5-coder:3b` knappe tre minutter. /
+The first question is slowest because the model loads. Measured on this PC (i3-10100F, 8 GB RAM, CPU only), the first answer from the 3b model took just under three minutes.
+
+**Kvalitet: sjekk alltid svaret / Quality: always check the answer.** I testen over ga 3b-modellen en regex for norske telefonnumre som krever 9 sifre, mens eksemplene i samme svar har 8 sifre, så koden og eksemplene motsier hverandre. Små lokale modeller høres sikre ut også når de tar feil. For alvorlig kode: bruk `qwen2.5-coder:7b` eller større, og les og test alltid selv. /
+In that test the 3b model wrote a regex for Norwegian phone numbers that needs 9 digits while the examples in the same answer have 8, so the code contradicts itself. Small local models sound confident even when wrong.
+
 **5. CodeAgent:**
 ```bash
 python agents.py --agent code "Write a clean Next.js API route that returns JSON"
