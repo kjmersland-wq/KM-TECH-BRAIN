@@ -184,18 +184,31 @@ def _norm(text: str) -> str:
     return " ".join(str(text).lower().split())
 
 
-def _split_text(content: str, unit: str) -> List[str]:
+def _split_text(content: str, unit: str, chunk_words: int = 60) -> List[str]:
     if unit == "file":
         return [content.strip()]
+    if unit == "chunks":  # lange artikler: del i biter på ca. chunk_words ord, ved setningsgrenser
+        sents = re.split(r"(?<=[.!?])\s+", " ".join(content.split()))
+        chunks, cur = [], []
+        for s in sents:
+            cur.append(s)
+            if sum(len(x.split()) for x in cur) >= chunk_words:
+                chunks.append(" ".join(cur))
+                cur = []
+        if cur and (not chunks or sum(len(x.split()) for x in cur) >= chunk_words // 3):
+            chunks.append(" ".join(cur))
+        elif cur:
+            chunks[-1] += " " + " ".join(cur)
+        return chunks
     if unit == "paragraphs":
         return [p.strip() for p in re.split(r"\n\s*\n", content) if p.strip()]
     return [l.strip() for l in content.splitlines() if l.strip()]  # lines
 
 
-def _read_text_file(path: Path, label: Optional[str], unit: str) -> List[Tuple[str, str]]:
+def _read_text_file(path: Path, label: Optional[str], unit: str, chunk_words: int = 60) -> List[Tuple[str, str]]:
     content = path.read_text(encoding="utf-8-sig", errors="replace")
     out = []
-    for chunk in _split_text(content, unit):
+    for chunk in _split_text(content, unit, chunk_words):
         if label:
             out.append((chunk, label))
         elif unit == "lines" and ("\t" in chunk or " | " in chunk):
@@ -208,7 +221,7 @@ def _read_text_file(path: Path, label: Optional[str], unit: str) -> List[Tuple[s
 
 
 def collect_examples(source: str, label: Optional[str] = None, unit: Optional[str] = None,
-                     min_chars: int = 3) -> List[Tuple[str, str]]:
+                     min_chars: int = 3, chunk_words: int = 60) -> List[Tuple[str, str]]:
     """Samle mange eksempler fra en fil eller mappe. / Gather many examples from a file or a folder.
 
     * Mappe / folder: undermappenavn = label (f.eks. inbox/Blues_Roots/*.txt), eller --label for alle.
@@ -231,11 +244,11 @@ def collect_examples(source: str, label: Optional[str] = None, unit: Optional[st
             if f.suffix.lower() in (".csv", ".json"):
                 found += load_records(str(f))
             elif f.suffix.lower() in TEXT_EXT:
-                found += _read_text_file(f, lab, unit or ("file" if lab else "lines"))
+                found += _read_text_file(f, lab, unit or ("file" if lab else "lines"), chunk_words)
     elif p.suffix.lower() in (".csv", ".json"):
         found = load_records(str(p))
     else:
-        found = _read_text_file(p, label, unit or "lines")
+        found = _read_text_file(p, label, unit or "lines", chunk_words)
     return [(t, l) for t, l in found if len(t) >= min_chars and l]
 
 
@@ -282,7 +295,9 @@ if __name__ == "__main__":
     a_imp = sub.add_parser("import", help="Mange eksempler fra fil/mappe / many examples from file or folder")
     a_imp.add_argument("source")
     a_imp.add_argument("--label", help="Label for alle / one label for everything imported")
-    a_imp.add_argument("--unit", choices=["lines", "paragraphs", "file"], help="Hva er ett eksempel? / what is one example?")
+    a_imp.add_argument("--unit", choices=["lines", "paragraphs", "file", "chunks"],
+                       help="Hva er ett eksempel? / what is one example? chunks = del lange artikler i biter / split long articles")
+    a_imp.add_argument("--chunk-words", type=int, default=60, help="Ordantall per bit med --unit chunks / words per chunk")
     a_imp.add_argument("--no-dedupe", action="store_true")
     a_imp.add_argument("--dry-run", action="store_true")
     a_st = sub.add_parser("stats", help="Vis statistikk / show dataset stats")
@@ -294,7 +309,7 @@ if __name__ == "__main__":
             add_example(ns.file, ns.text, ns.label)
             print(f"Lagt til / Added to {ns.file}: [{ns.label}] {ns.text}")
         elif ns.cmd == "import":
-            recs = collect_examples(ns.source, ns.label, ns.unit)
+            recs = collect_examples(ns.source, ns.label, ns.unit, chunk_words=ns.chunk_words)
             if ns.dry_run:
                 print(f"{len(recs)} eksempler funnet / found (dry run). Eksempel/sample: {recs[:2]}")
             else:

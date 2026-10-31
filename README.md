@@ -13,6 +13,9 @@ Fullt offline. Ingen API-er, ingen kreditter. / Fully offline. No APIs, no credi
 | `agents.py` | Lokale agenter (`MusicAgent`, `WebAgent`) som bruker modellen + innebygd fagkunnskap. | Local agents (`MusicAgent`, `WebAgent`) using the model + built-in domain know-how. |
 | `web/` | Statisk landingsside (HTML/CSS/JS) klar for Cloudflare Pages. | Static landing page (HTML/CSS/JS), ready for Cloudflare Pages. |
 | `embeddings.py` | Encodere: `hashed` (lettvekts) og `pretrained` (sentence-transformers), med fallback. | Encoders: `hashed` (lightweight) and `pretrained` (sentence-transformers), with fallback. |
+| `retrieve.py` | Finn lignende eksempler i biblioteket ditt (embeddings + cosinus). | Find similar examples in your library (embeddings + cosine). |
+| `data/music_genres.csv` | 84 håndskrevne musikkeksempler: Blues, Jazz, Rock, Other (norsk + engelsk). | 84 hand-written music examples: Blues, Jazz, Rock, Other (Norwegian + English). |
+| `data/eval_music.csv` | 24 testtekster for sjanger, ikke i treningsdata. | 24 genre test texts, not in the training data. |
 | `evaluate.py` | Nøyaktighet per kategori, F1 og forvirringsmatrise. | Per-category accuracy, F1 and confusion matrix. |
 | `data/eval_real.csv` | 50 håndskrevne testtekster (ikke i treningsdata). | 50 hand-written test texts (not in the training data). |
 | `utils.py` | Seed, enhet, tospråklige meldinger. | Seed, device, bilingual messages. |
@@ -104,17 +107,42 @@ python train.py --mode pretrained                 # videre helt offline / fully 
 `pretrained` uten pakken installert gir en tydelig melding og faller tilbake til `simple`. En modell trent med `hashed`/`pretrained` husker selv hvilken encoder den trenger, så `predict.py`/`agents.py` fungerer uendret. Du kan også peke `--encoder-model` på en lokal mappe. /
 Without the package, `pretrained` prints a notice and falls back to `simple`. A trained model remembers its encoder, so `predict.py`/`agents.py` work unchanged. `--encoder-model` also accepts a local folder.
 
+## Musikk-bibliotek og søk / Music library and similarity search
+
+`data/music_genres.csv` er biblioteket MusicAgent bruker (Blues, Jazz, Rock, Other). Legg til dine egne ekte eksempler: titler, beskrivelser, tekstlinjer, artikler. /
+`data/music_genres.csv` is the library MusicAgent uses. Add your own real examples: titles, descriptions, lyric snippets, articles.
+
+```bash
+python retrieve.py "slide guitar i åpen G på en gammel resonator"      # mest like eksempler / most similar
+python retrieve.py "Cmaj7 voicings like Bill Evans" -k 3 --label Jazz
+python retrieve.py --eval data/eval_music.csv                           # kNN-treff på testsettet / kNN accuracy
+python retrieve.py "riff i drop D" --mode pretrained                    # auto | hashed | pretrained
+```
+`--mode auto` bruker `pretrained` hvis sentence-transformers er installert og modellen er lastet ned, ellers `hashed`. Indeksen caches i `models/`. Python: `Retriever(...).similar(text, k)` og `.vote(text)`. /
+`auto` uses `pretrained` if installed and already downloaded, otherwise `hashed`. The index is cached in `models/`.
+
+Sjangermodell (valgfri, brukes av MusicAgent hvis den finnes) / optional genre model, used by MusicAgent if present:
+```bash
+python train.py --data data/music_genres.csv --mode hashed --out models/genres.pth --epochs 400 --patience 60
+python evaluate.py --model models/genres.pth --data data/eval_music.csv
+```
+
 ## Mange eksempler på én gang / Adding many examples
 
 ```bash
-python data.py import notes.txt --label "Blues/Roots"      # én tekst per linje / one text per line
-python data.py import samples.txt                          # linjer som: label<TAB>tekst  eller  label | tekst
-python data.py import inbox/                               # undermappe = label (bruk __ for /: Blues__Roots/)
-python data.py import post.txt --label Code/Tech --unit paragraphs   # blank linje skiller eksempler
-python data.py import inbox/ --dry-run                     # se hva som ville skjedd / preview only
-python data.py stats                                       # antall per kategori, duplikater / counts per category
+python data.py import notes.txt --label Jazz --file data/music_genres.csv      # én tekst per linje / one text per line
+python data.py import samples.txt --file data/music_genres.csv                  # linjer som: label<TAB>tekst  eller  label | tekst
+python data.py import music_inbox/ --file data/music_genres.csv                 # undermappe = label: music_inbox/Blues/*.txt
+python data.py import artikkel.txt --label Rock --unit chunks --chunk-words 60 --file data/music_genres.csv   # lange artikler i biter
+python data.py import post.txt --label Blues --unit paragraphs --file data/music_genres.csv   # blank linje skiller eksempler
+python data.py import music_inbox/ --dry-run --file data/music_genres.csv       # forhåndsvis / preview only
+python data.py stats --file data/music_genres.csv                               # antall per sjanger / counts per genre
 ```
-Duplikater hoppes over automatisk (`--no-dedupe` for å slå av). `.csv`/`.json` kan også importeres. / Duplicates are skipped automatically.
+`--unit`: `lines` (standard for .txt), `paragraphs`, `file` (standard i undermapper), `chunks` (artikler delt ved setningsgrenser). Duplikater hoppes over. Uten `--file` brukes `data/example_data.csv`. /
+Duplicates are skipped. Without `--file` the default is `data/example_data.csv`.
+
+Hva som teller som et godt eksempel / what makes a good example: ekte tekst slik den faktisk dukker opp (plateomtaler, spørsmål på forum, tekstlinjer, artikkelavsnitt), 10–60 ord, og gjerne en blanding av norsk og engelsk. Over 30 eksempler per sjanger gjør en merkbar forskjell. /
+Real text as it actually appears, 10–60 words, ideally mixed Norwegian and English. 30+ examples per genre makes a noticeable difference.
 
 ## Evaluering / Evaluation
 
@@ -144,14 +172,21 @@ python agents.py "recommend some jazz to listen to"
 python agents.py --agent music --task lyrics "I woke up this morning; I woke up this morning; Blues walking like a man"
 python agents.py --agent music --task metadata "Slow Delta blues about a long road home."
 python agents.py "SEO for nettbutikken min i Next.js"
+python agents.py "Hva er jazz egentlig? Forklar for en nybegynner"   # explain + sjanger + lignende fra biblioteket
+python agents.py "finn lignende eksempler: slide i åpen D"
 python agents.py --interactive                                             # med minne / with memory
 python agents.py --model models/brain.pth --selftest
 ```
 
 | Agent | Oppgaver / Tasks |
 |---|---|
-| `music` | `ideas`, `listen` (lyttetips for blues/jazz/rock), `lyrics` (linjer, repetisjon, rim, AAB), `metadata` (tittel, tagger, beskrivelse) |
+| `music` | `ideas`, `listen` (lyttetips for blues/jazz/rock), `explain` (kort introduksjon til sjangeren), `related` (lignende eksempler fra biblioteket), `lyrics` (linjer, repetisjon, rim, AAB), `metadata` (tittel, tagger, beskrivelse) |
 | `web` | `seo`, `stripe`, `nextjs`, `decision` |
+
+**MusicAgent og sjanger / and genre:** sjangeren (blues, jazz, rock) er hovedsignalet. Den finnes i denne rekkefølgen: (1) nøkkelord og artistnavn, (2) sjangermodellen `models/genres.pth` hvis den finnes, (3) avstemning blant de mest like eksemplene i biblioteket (`--library`). Agenten sier hvordan den kom fram til sjangeren, og viser de mest like eksemplene dine under svaret. Uten bibliotek fungerer den på nøkkelord alene. /
+Genre is the main signal, found by (1) keywords and artist names, (2) the optional genre model, (3) a vote among the most similar library examples. The agent tells you how it decided and shows the closest examples from your library. Without a library it works on keywords alone.
+
+WebAgent er uendret. / WebAgent is unchanged.
 
 Uten trent modell bruker agentene bare nøkkelord. / Without a trained model the agents use keywords only.
 

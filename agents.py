@@ -23,6 +23,7 @@ import re
 import sys
 import zlib
 from collections import Counter, deque
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from data import tokenize
@@ -55,6 +56,12 @@ def lang_of(text: str) -> str:
 STOP = _NO | _EN | set("""a an i me us idea ideas idé ideer checklist sjekkliste content innhold analyze analyse analyser
 tips tip set setup should need want please give show write help best good new more flere mer lag lage skriv skrive
 foreslå suggest make get use using make about like noe ting""".split())
+
+
+def has_word(low: str, kw: str) -> bool:
+    """Treff på ordstart, så 'ide' ikke matcher 'slide' men 'ideer' matcher 'ide'.
+    Word-start match: 'ide' must not hit inside 'slide', but 'ideer' still matches 'ide'."""
+    return re.search(r"(?<!\w)" + re.escape(kw.strip()), low) is not None
 
 
 def keywords_of(text: str, n: int = 6) -> List[str]:
@@ -177,6 +184,57 @@ GENRES = {
     },
 }
 
+GENRES["blues"]["listen"] += [
+    L("Robert Johnson, \"King of the Delta Blues Singers\" (1961). The compilation that introduced him to a whole new generation, hiss and all.",
+      "Robert Johnson, \"King of the Delta Blues Singers\" (1961). Samleplata som introduserte ham for en helt ny generasjon, susing og alt."),
+]
+GENRES["jazz"]["listen"] += [
+    L("Art Blakey & the Jazz Messengers, \"Moanin'\" (1958). Hard bop with a bounce. You'll be nodding before the horns come in.",
+      "Art Blakey & the Jazz Messengers, \"Moanin'\" (1958). Hard bop med sprett i. Du nikker med før blåserne er inne."),
+    L("Thelonious Monk, \"Misterioso\" (1958), recorded live at the Five Spot. Crooked, funny and completely sure of itself.",
+      "Thelonious Monk, \"Misterioso\" (1958), live fra Five Spot. Skjev, morsom og helt sikker på seg selv."),
+]
+GENRES["rock"]["listen"] += [
+    L("The Who, \"Live at Leeds\" (1970). Loud, sloppy and thrilling. Exactly what a rock show should be.",
+      "The Who, \"Live at Leeds\" (1970). Høyt, slurvete og spennende. Akkurat sånn en rockekonsert skal være."),
+    L("Chuck Berry, \"Chuck Berry Is on Top\" (1959). Every rock guitarist has stolen from this guy, and he knew it.",
+      "Chuck Berry, \"Chuck Berry Is on Top\" (1959). Hver eneste rockegitarist har stjålet fra denne fyren, og han visste det."),
+]
+GENRES["blues"]["intro"] = L(
+    "Blues is the root system under most of what you hear today. It grew out of African American communities in the Deep South in the late 1800s, built on call and response and those blue notes that sit in the cracks between the piano keys. The twelve-bar form sounds simple until you try to make it mean something. Start with Skip James, jump to Muddy Waters in Chicago, and you'll hear the same ache from two different rooms.",
+    "Bluesen er rotsystemet under det meste du hører i dag. Den vokste fram i afroamerikanske miljøer i sørstatene på slutten av 1800-tallet, bygget på kall og svar og de såkalte bluesnotene som ligger i sprekken mellom tangentene på pianoet. Tolvtaktsformen høres enkel ut helt til du prøver å få den til å bety noe. Start med Skip James, hopp så til Muddy Waters i Chicago, så hører du den samme smerten fra to forskjellige rom.")
+GENRES["jazz"]["intro"] = L(
+    "Jazz started in New Orleans in the early 1900s and has never sat still since. The heart of it is improvisation: musicians making it up together, listening hard, answering each other. Swing, bebop, cool, free, every decade took it somewhere new. If you've never listened properly, give Kind of Blue one evening with nothing else going on.",
+    "Jazzen startet i New Orleans tidlig på 1900-tallet og har aldri satt seg ned siden. Kjernen er improvisasjon: musikere som finner det opp sammen, lytter nøye og svarer hverandre. Swing, bebop, cool, free, hvert tiår tok den et nytt sted. Har du aldri hørt skikkelig etter, sett på Kind of Blue en kveld uten at noe annet pågår.")
+GENRES["rock"]["intro"] = L(
+    "Rock and roll came out of rhythm and blues and country in the American South in the early fifties, with Chuck Berry's guitar and Little Richard's piano doing the heavy lifting. Then the electric guitar got louder every year: Hendrix, Zeppelin, Sabbath. Nearly every great rock riff is a blues phrase in a leather jacket.",
+    "Rocken vokste ut av rhythm and blues og country i sørstatene tidlig på femtitallet, med Chuck Berrys gitar og Little Richards piano som de tunge løftene. Så ble den elektriske gitaren høyere for hvert år: Hendrix, Zeppelin, Sabbath. Nesten hvert eneste store rockeriff er en bluesfrase i skinnjakke.")
+GENRES["blues"]["next"] = L(
+    "Pick one record and live with it for a week before moving on. Hard Again if you want grit, Live at the Regal if you want to hear a crowd breathe with the band.",
+    "Velg én plate og bo i den en uke før du går videre. Hard Again hvis du vil ha grus, Live at the Regal hvis du vil høre et publikum puste med bandet.")
+GENRES["jazz"]["next"] = L(
+    "Put on one album from start to finish with the phone in another room. Then look up who played on it. Jazz is a family tree, and every name leads to three more records.",
+    "Sett på én plate fra start til slutt med telefonen i et annet rom. Slå så opp hvem som spilte på den. Jazz er et slektstre, og hvert navn leder til tre nye plater.")
+GENRES["rock"]["next"] = L(
+    "Find the riff you love and learn it by ear before you look up the tab. You'll remember it for good, and you'll hear what the guitarist actually did.",
+    "Finn riffet du er mest glad i og lær det på gehør før du sjekker tabulaturen. Da husker du det for alltid, og du hører hva gitaristen faktisk gjorde.")
+GENRES["any"]["next"] = L(
+    "Tell me a genre or an artist you like, and I'll point you somewhere good.",
+    "Si meg en sjanger eller en artist du liker, så peker jeg deg et godt sted.")
+GENRES["any"]["intro"] = L(
+    "Tell me which genre you're curious about, blues, jazz or rock, and I'll give you a proper introduction.",
+    "Si hvilken sjanger du er nysgjerrig på, blues, jazz eller rock, så gir jeg deg en ordentlig introduksjon.")
+
+LABEL_GENRE = {"Blues": "blues", "Jazz": "jazz", "Rock": "rock", "Blues/Roots": "blues"}  # modell-/biblioteklabel -> sjanger
+
+
+def genre_by_keywords(text: str) -> Optional[str]:
+    low = text.lower()
+    scores = {g: sum(has_word(low, k) for k in d["kw"]) for g, d in GENRES.items() if g != "any"}
+    best = max(scores, key=scores.get)
+    return best if scores[best] > 0 else None
+
+
 BANNED = ["delve", "unlock", "journey", "tapestry", "game-changer", "game changer", "elevate", "in today's", "dive into",
           "seamless", "leverage", "unleash", "embark", "landscape", "realm", "furthermore", "moreover", "in conclusion",
           "ultimate guide", "whether you're", "i dagens", "utforsk", "spennende reise", "neste nivå", "frigjør",
@@ -185,7 +243,7 @@ BANNED = ["delve", "unlock", "journey", "tapestry", "game-changer", "game change
 
 def detect_genre(text: str, label: Optional[str] = None, prev: Optional[str] = None) -> str:
     low = text.lower()
-    scores = {g: sum(k in low for k in d["kw"]) for g, d in GENRES.items() if g != "any"}
+    scores = {g: sum(has_word(low, k) for k in d["kw"]) for g, d in GENRES.items() if g != "any"}
     best = max(scores, key=scores.get)
     if scores[best] > 0:
         return best
@@ -203,13 +261,19 @@ class Agent:
     domains: Dict[str, float] = {}
     task_triggers: Dict[str, List[str]] = {}
     suggestions: Dict[str, Text] = {}  # kategori -> neste steg / category -> next step
+    default_task: Optional[str] = None  # brukes når ingen oppgave nevnes / used when no task is named
 
-    def __init__(self, brain=None):
-        self.brain = brain
+    def __init__(self, brain=None, retriever=None, genre_brain=None):
+        self.brain = brain              # kategori-modell (models/brain.pth) / category model
+        self.retriever = retriever      # retrieve.Retriever over biblioteket ditt / over your library
+        self.genre_brain = genre_brain  # valgfri sjanger-modell (models/genres.pth) / optional genre model
+
+    def related(self, text: str, c: dict) -> List[dict]:
+        return []
 
     def keyword_score(self, text: str) -> float:
         low = text.lower()
-        return sum(w for k, w in self.keywords.items() if k in low)
+        return sum(w for k, w in self.keywords.items() if has_word(low, k))
 
     def relevance(self, text: str, cls: Optional[dict] = None) -> float:
         score = self.keyword_score(text)
@@ -219,7 +283,7 @@ class Agent:
 
     def pick_tasks(self, text: str, limit: int = 3) -> List[str]:
         low = text.lower()
-        hits = {t: sum(w in low for w in ws) for t, ws in self.task_triggers.items()}
+        hits = {t: sum(has_word(low, w) for w in ws) for t, ws in self.task_triggers.items()}
         ranked = [t for t, n in sorted(hits.items(), key=lambda kv: -kv[1]) if n > 0]
         return ranked[:limit]
 
@@ -243,10 +307,13 @@ class Agent:
             if fn is None:
                 raise ValueError(f"{self.name} har ikke oppgaven / has no task '{t}'")
             sections.append((t, fn(text, c)))
+        if not sections and self.default_task and c.get("genre", "any") != "any":
+            sections.append((self.default_task, getattr(self, f"task_{self.default_task}")(text, c)))
         if not sections:
             sections.append(("advice", self.task_advice(text, c)))
         return {"agent": self.name, "lang": c["lang"], "classification": cls, "sections": sections,
                 "next": self.next_step(c), "unsure": self.unsure(cls, c["lang"]), "ctx": c,
+                "related": self.related(text, c),
                 "tasks": [t for t, _ in sections]}
 
     def next_step(self, c: dict) -> Optional[str]:
@@ -283,8 +350,68 @@ class MusicAgent(Agent):
         "lyrics": ["lyric", "verse", "vers", "stanza", "tekst", "refreng", "analyze", "analyse"],
         "metadata": ["metadata", "tags", "title", "description", "spotify", "release", "tittel", "beskrivelse", "utgivelse"],
         "ideas": ["idea", "idé", "ide", "content", "blog", "blogg", "video", "post", "innhold", "newsletter", "nyhetsbrev"],
-        "listen": ["listen", "recommend", "anbefal", "lytte", "playlist", "spilleliste", "hør", "similar", "lignende"],
+        "listen": ["listen", "recommend", "anbefal", "lytte", "playlist", "spilleliste", "hør"],
+        "related": ["related", "similar", "lignende", "liknende", "more like", "mer som", "find examples", "finn eksempler"],
+        "explain": ["explain", "what is", "hva er", "forklar", "history", "historie", "intro", "guide", "introduction"],
     }
+
+    def context(self, text: str, cls: Optional[dict], prev: Optional[dict], follow: bool) -> dict:
+        """Sjanger: nøkkelord først, så sjangermodell, så søk i biblioteket (kNN). Lets in that order."""
+        c = super().context(text, cls, prev, follow)
+        c["genre_how"] = "keywords" if genre_by_keywords(text) else None
+        if c["genre_how"] or (follow and prev and len(text.split()) <= 3):
+            return c
+        if self.genre_brain:
+            g = self.genre_brain.predict(text)
+            if g["confidence"] >= 0.5 and g["label"] in LABEL_GENRE:
+                c["genre"], c["genre_how"] = LABEL_GENRE[g["label"]], f"genre model {g['confidence']:.0%}"
+                return c
+        if self.retriever:
+            label, share = self.retriever.vote(text)
+            if label in LABEL_GENRE and share >= 0.5:
+                c["genre"], c["genre_how"] = LABEL_GENRE[label], f"library {share:.0%}"
+        return c
+
+    def relevance(self, text: str, cls: Optional[dict] = None) -> float:
+        """Sjangerord (jazz, Hendrix, Muddy ...) og biblioteket teller tungt, slik at musikk ikke
+        havner hos WebAgent bare fordi kategorimodellen er usikker. / Genre words and the library count heavily."""
+        score = super().relevance(text, cls)
+        if genre_by_keywords(text):
+            score += 4
+        elif self.retriever:
+            label, share = self.retriever.vote(text)
+            if label in LABEL_GENRE and share >= 0.6:
+                score += 2
+        return score
+
+    default_task = "listen"
+
+    def next_step(self, c: dict) -> Optional[str]:
+        """Sjangeren styrer, men sterke signaler om penger/helse (f.eks. 'selge', 'vondt i hånda') får egne råd.
+        Genre drives it, but a confident money/health signal gets its own advice."""
+        conf = c["cls"]["confidence"] if c["cls"] else 0.0
+        if c["label"] in ("Business/Monetization", "Health/Productivity") and conf >= 0.7:
+            return self.suggestions[c["label"]][c["lang"]]
+        if c["genre"] != "any":
+            return GENRES[c["genre"]]["next"][c["lang"]]
+        s = self.suggestions.get(c["label"] or "")
+        return s[c["lang"]] if s else None
+
+    def related(self, text: str, c: dict) -> List[dict]:
+        """De mest like eksemplene i biblioteket ditt. / Most similar examples from your library."""
+        if not self.retriever:
+            return []
+        return self.retriever.similar(text, k=3, min_score=0.15)
+
+    def task_related(self, text: str, c: dict) -> List[str]:
+        hits = self.related(text, c)
+        if not hits:
+            return (["Fant ingenting som ligner i biblioteket ditt ennå. Legg til flere eksempler med python data.py import."]
+                    if c["lang"] == "no" else ["Nothing close in your library yet. Add more examples with python data.py import."])
+        return [f"[{h['label']}] {h['text']}" for h in hits]
+
+    def task_explain(self, text: str, c: dict) -> List[str]:
+        return [GENRES[c["genre"]]["intro"][c["lang"]]]
     suggestions = {
         "Blues/Roots": L("Pick one record and live with it for a week before moving on. Hard Again if you want grit, Live at the Regal if you want to hear a crowd breathe with the band.",
                          "Velg én plate og bo i den en uke før du går videre. Hard Again hvis du vil ha grus, Live at the Regal hvis du vil høre et publikum puste med bandet."),
@@ -486,9 +613,9 @@ class Router:
     """Velger agent (modellens kategori + nøkkelord) og husker de siste meldingene.
     Picks the agent (model category + keywords) and remembers recent interactions."""
 
-    def __init__(self, brain=None, memory_size: int = 5):
+    def __init__(self, brain=None, memory_size: int = 5, retriever=None, genre_brain=None):
         self.brain = brain
-        self.agents = {n: c(brain) for n, c in REGISTRY.items()}
+        self.agents = {n: c(brain, retriever, genre_brain) for n, c in REGISTRY.items()}
         self.memory = Memory(memory_size)
 
     def route(self, text: str) -> Agent:
@@ -533,16 +660,49 @@ def load_brain(path: str):
         return None
 
 
+def load_library(path: str):
+    """Valgfritt søkebibliotek. Mangler det, virker agentene uten. / Optional; agents work without it."""
+    if not path or not Path(path).exists():
+        return None
+    try:
+        from retrieve import Retriever
+        return Retriever(path, quiet=True)
+    except Exception as e:
+        say(f"Merk: biblioteket ble ikke lastet ({e}).", f"Note: library not loaded ({e}).")
+        return None
+
+
+def load_genre_model(path: str):
+    if not path or not Path(path).exists():
+        return None
+    try:
+        from predict import Brain
+        return Brain(path)
+    except Exception as e:
+        say(f"Merk: sjangermodellen ble ikke lastet ({e}).", f"Note: genre model not loaded ({e}).")
+        return None
+
+
 def show(res: dict) -> None:
     c = res["classification"]
-    cls = f"  [{c['label']} {c['confidence']:.0%}]" if c else ""
+    # MusicAgent: sjangeren er hovedsignalet, den grove kategorimodellen vises bare når sjangeren er ukjent
+    # MusicAgent: the genre is the main signal; the coarse category only shows when the genre is unknown
+    hide = res["agent"] == "music" and res["ctx"]["genre"] != "any"
+    cls = f"  [{c['label']} {c['confidence']:.0%}]" if c and not hide else ""
     print(f"\n== {res['agent']} ({res['lang']}){cls}{' (oppfølging/follow-up)' if res.get('followup') else ''}")
     if res["unsure"]:
         print(f"  ? {res['unsure']}")
+    how = res["ctx"].get("genre_how")
+    if res["agent"] == "music" and res["ctx"]["genre"] != "any":
+        print(f"  {'sjanger' if res['lang'] == 'no' else 'genre'}: {res['ctx']['genre']} ({how or 'memory'})")
     for task, lines in res["sections"]:
         print(f"  [{task}]")
         for line in lines:
             print(f"    - {line}")
+    if res.get("related") and "related" not in res["tasks"]:
+        print(f"  {'Fra biblioteket ditt' if res['lang'] == 'no' else 'From your library'}:")
+        for h in res["related"]:
+            print(f"    ~ {h['score']:.2f} [{h['label']}] {h['text'][:90]}")
     if res["next"]:
         print(f"  {'Neste steg' if res['lang'] == 'no' else 'Next step'}:\n    {res['next']}")
 
@@ -559,6 +719,7 @@ def selftest() -> int:
         r = router.run(q, agent="web" if any(k in q for k in ("seo", "stripe", "next", "hosting", "cloudflare")) else "music")
         blob = " ".join(l for _, ls in r["sections"] for l in ls).lower()
         blob += " " + " ".join(t[lang].lower() for g in GENRES.values() for key in ("listen", "hooks") for t in g[key] for lang in ("en", "no"))
+        blob += " " + " ".join(g["intro"][lang].lower() for g in GENRES.values() for lang in ("en", "no"))
         for b in BANNED:
             if b in blob:
                 print(f"STIL/STYLE: '{b}' in output for: {q}")
@@ -573,6 +734,9 @@ def main(argv=None) -> int:
     p.add_argument("--agent", choices=sorted(REGISTRY), help="Velg agent / force an agent")
     p.add_argument("--task", help="Velg oppgave / force a task (ideas, lyrics, metadata, listen, seo, stripe, nextjs, decision)")
     p.add_argument("--model", default="models/brain.pth")
+    p.add_argument("--library", default="data/music_genres.csv",
+                   help="Eksempler MusicAgent søker i / examples MusicAgent searches (python retrieve.py)")
+    p.add_argument("--genre-model", default="models/genres.pth", help="Valgfri sjangermodell / optional genre model")
     p.add_argument("--list", action="store_true")
     p.add_argument("--interactive", action="store_true", help="Samtale med minne / conversation with memory")
     p.add_argument("--selftest", action="store_true")
@@ -585,7 +749,7 @@ def main(argv=None) -> int:
             print(f"{n:8} {c.description}\n         tasks: {', '.join(c.task_triggers)}")
         return 0
 
-    router = Router(load_brain(a.model))
+    router = Router(load_brain(a.model), retriever=load_library(a.library), genre_brain=load_genre_model(a.genre_model))
 
     def go(text: str) -> None:
         try:
