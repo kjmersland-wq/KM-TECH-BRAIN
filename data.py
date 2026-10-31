@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import torch
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, TensorDataset
 
 PAD, UNK = "<pad>", "<unk>"
 _TOKEN_RE = re.compile(r"[\w']+", re.UNICODE)
@@ -150,14 +150,22 @@ def split_records(records, targets, val_split: float, seed: int, task: str):
 
 
 def make_loaders(records, task: str = "classification", val_split: float = 0.2, batch_size: int = 16,
-                 max_len: int = 64, min_freq: int = 1, seed: int = 42):
-    """Returnerer train_loader, val_loader, vocab, classes. Vocab bygges kun fra treningsdata."""
+                 max_len: int = 64, min_freq: int = 1, seed: int = 42, encoder=None):
+    """Returnerer train_loader, val_loader, vocab, classes. Vocab bygges kun fra treningsdata.
+    Med `encoder` (hashed/pretrained) brukes ferdige vektorer og vocab er None.
+    With an `encoder` the texts become dense vectors and vocab is None."""
     targets, classes = make_targets(records, task)
     train_idx, val_idx = split_records(records, targets, val_split, seed, task)
     if len(train_idx) < 2 or not val_idx:
         raise ValueError("For lite data til train/val-split / Too little data for a train/val split")
-    vocab = Vocab.build([records[i][0] for i in train_idx], min_freq=min_freq)
-    mk = lambda ids: TextDataset([records[i] for i in ids], vocab, [targets[i] for i in ids], max_len, task)
+    if encoder is None:
+        vocab = Vocab.build([records[i][0] for i in train_idx], min_freq=min_freq)
+        mk = lambda ids: TextDataset([records[i] for i in ids], vocab, [targets[i] for i in ids], max_len, task)
+    else:
+        vocab = None
+        feats = encoder.encode([t for t, _ in records])  # encode once / kodes én gang
+        ydtype = torch.long if task == "classification" else torch.float32
+        mk = lambda ids: TensorDataset(feats[ids], torch.tensor([targets[i] for i in ids], dtype=ydtype))
     train_ds, val_ds = mk(train_idx), mk(val_idx)
     # BatchNorm krasjer på batch med 1 eksempel -> dropp siste ufullstendige batch om nødvendig
     drop_last = len(train_ds) % batch_size == 1
@@ -167,14 +175,133 @@ def make_loaders(records, task: str = "classification", val_split: float = 0.2, 
     return train_loader, val_loader, vocab, classes
 
 
+# ---------------------------------------------------------------- bulk import / stats
+
+TEXT_EXT = {".txt", ".md"}
+
+
+def _norm(text: str) -> str:
+    return " ".join(str(text).lower().split())
+
+
+def _split_text(content: str, unit: str) -> List[str]:
+    if unit == "file":
+        return [content.strip()]
+    if unit == "paragraphs":
+        return [p.strip() for p in re.split(r"\n\s*\n", content) if p.strip()]
+    return [l.strip() for l in content.splitlines() if l.strip()]  # lines
+
+
+def _read_text_file(path: Path, label: Optional[str], unit: str) -> List[Tuple[str, str]]:
+    content = path.read_text(encoding="utf-8-sig", errors="replace")
+    out = []
+    for chunk in _split_text(content, unit):
+        if label:
+            out.append((chunk, label))
+        elif unit == "lines" and ("\t" in chunk or " | " in chunk):
+            lab, txt = chunk.split("\t", 1) if "\t" in chunk else chunk.split(" | ", 1)
+            out.append((txt.strip(), lab.strip()))
+        else:
+            raise ValueError(f"{path}: mangler label / no label. Bruk --label, eller 'label<TAB>tekst' / "
+                             f"use --label or 'label<TAB>text' per line")
+    return out
+
+
+def collect_examples(source: str, label: Optional[str] = None, unit: Optional[str] = None,
+                     min_chars: int = 3) -> List[Tuple[str, str]]:
+    """Samle mange eksempler fra en fil eller mappe. / Gather many examples from a file or a folder.
+
+    * Mappe / folder: undermappenavn = label (f.eks. inbox/Blues_Roots/*.txt), eller --label for alle.
+      Ett eksempel per fil (unit=file). Folder name `Blues_Roots` -> label `Blues/Roots` if such a label exists
+      in your data; otherwise use the exact label as folder name (use `__` for '/': Blues__Roots).
+    * .txt/.md: én tekst per linje (unit=lines) med --label, eller 'label<TAB>tekst' / 'label | tekst'.
+      unit=paragraphs: blanke linjer skiller eksempler. unit=file: hele filen er ett eksempel.
+    * .csv/.json: leses som vanlig (kolonner text,label). / read as usual.
+    """
+    p = Path(source)
+    if not p.exists():
+        raise FileNotFoundError(f"Fant ikke / not found: {p}")
+    found: List[Tuple[str, str]] = []
+    if p.is_dir():
+        for f in sorted(p.rglob("*")):
+            if not f.is_file():
+                continue
+            rel = f.relative_to(p)
+            lab = label or (rel.parts[0].replace("__", "/") if len(rel.parts) > 1 else None)
+            if f.suffix.lower() in (".csv", ".json"):
+                found += load_records(str(f))
+            elif f.suffix.lower() in TEXT_EXT:
+                found += _read_text_file(f, lab, unit or ("file" if lab else "lines"))
+    elif p.suffix.lower() in (".csv", ".json"):
+        found = load_records(str(p))
+    else:
+        found = _read_text_file(p, label, unit or "lines")
+    return [(t, l) for t, l in found if len(t) >= min_chars and l]
+
+
+def add_examples(path: str, records: Sequence[Tuple[str, str]], dedupe: bool = True) -> Tuple[int, int]:
+    """Legg til mange eksempler på én gang. Returnerer (lagt_til, hoppet_over_duplikater)."""
+    existing = set()
+    if dedupe and Path(path).exists():
+        existing = {_norm(t) for t, _ in load_records(path)}
+    added = skipped = 0
+    for text, lab in records:
+        key = _norm(text)
+        if dedupe and key in existing:
+            skipped += 1
+            continue
+        existing.add(key)
+        add_example(path, text, lab)
+        added += 1
+    return added, skipped
+
+
+def dataset_stats(records: Sequence[Tuple[str, str]]) -> str:
+    """Antall per label, ordlengde, duplikater. / Per-label counts, length, duplicates."""
+    from collections import Counter
+    counts = Counter(l for _, l in records)
+    words: Dict[str, int] = Counter()
+    for t, l in records:
+        words[l] += len(tokenize(t))
+    dupes = len(records) - len({_norm(t) for t, _ in records})
+    lines = [f"{len(records)} eksempler/examples, {len(counts)} labels, {dupes} duplikater/duplicates"]
+    for lab, n in counts.most_common():
+        lines.append(f"  {lab:<24} {n:5d}   snitt/avg {words[lab] / n:5.1f} ord/words")
+    small = [l for l, n in counts.items() if n < 20]
+    if small:
+        lines.append(f"  Tips: {', '.join(small)} har under 20 eksempler / have fewer than 20 examples.")
+    return "\n".join(lines)
+
+
 if __name__ == "__main__":
-    # python data.py add "my text" "Blues/Roots" [--file data/example_data.csv]
     import argparse
-    ap = argparse.ArgumentParser(description="Legg til eksempel / Add a labeled example")
-    ap.add_argument("action", choices=["add"])
-    ap.add_argument("text")
-    ap.add_argument("label")
-    ap.add_argument("--file", default="data/example_data.csv")
+    ap = argparse.ArgumentParser(description="Datahjelp / Data tools")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    a_add = sub.add_parser("add", help="Ett eksempel / one example")
+    a_add.add_argument("text"); a_add.add_argument("label")
+    a_imp = sub.add_parser("import", help="Mange eksempler fra fil/mappe / many examples from file or folder")
+    a_imp.add_argument("source")
+    a_imp.add_argument("--label", help="Label for alle / one label for everything imported")
+    a_imp.add_argument("--unit", choices=["lines", "paragraphs", "file"], help="Hva er ett eksempel? / what is one example?")
+    a_imp.add_argument("--no-dedupe", action="store_true")
+    a_imp.add_argument("--dry-run", action="store_true")
+    a_st = sub.add_parser("stats", help="Vis statistikk / show dataset stats")
+    for sp in (a_add, a_imp, a_st):
+        sp.add_argument("--file", default="data/example_data.csv", help="Datafil / data file (csv or json)")
     ns = ap.parse_args()
-    add_example(ns.file, ns.text, ns.label)
-    print(f"Lagt til / Added to {ns.file}: [{ns.label}] {ns.text}")
+    try:
+        if ns.cmd == "add":
+            add_example(ns.file, ns.text, ns.label)
+            print(f"Lagt til / Added to {ns.file}: [{ns.label}] {ns.text}")
+        elif ns.cmd == "import":
+            recs = collect_examples(ns.source, ns.label, ns.unit)
+            if ns.dry_run:
+                print(f"{len(recs)} eksempler funnet / found (dry run). Eksempel/sample: {recs[:2]}")
+            else:
+                added, skipped = add_examples(ns.file, recs, dedupe=not ns.no_dedupe)
+                print(f"Importert / Imported {added} -> {ns.file} (hoppet over {skipped} duplikater / skipped duplicates)")
+        else:
+            print(dataset_stats(load_records(ns.file)))
+    except (FileNotFoundError, ValueError, KeyError) as e:
+        print(f"FEIL / ERROR: {e}")
+        raise SystemExit(1)

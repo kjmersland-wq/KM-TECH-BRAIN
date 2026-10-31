@@ -14,6 +14,7 @@ from typing import List, Union
 import torch
 
 from data import Vocab
+from embeddings import encoder_from_spec
 from model import build_model
 from utils import say
 
@@ -34,7 +35,11 @@ class Brain:
         except FileNotFoundError:
             raise FileNotFoundError(f"Fant ikke modell / Model not found: {path}. Kjør/Run: python train.py")
         self.config, self.classes, self.max_len = ckpt["config"], ckpt["classes"], ckpt["max_len"]
-        self.vocab = Vocab(ckpt["vocab"])
+        self.vocab = Vocab(ckpt["vocab"]) if ckpt.get("vocab") else None
+        self.mode = ckpt.get("mode", "simple")
+        # hashed/pretrained: samme encoder som under trening kreves / the training-time encoder is required
+        self.encoder = encoder_from_spec(ckpt["encoder"]) if ckpt.get("encoder") else None
+        self.checkpoint = ckpt
         self.task = self.config["task"]
         self.model = build_model(self.config)
         self.model.load_state_dict(ckpt["model_state"])
@@ -44,7 +49,10 @@ class Brain:
     def predict_batch(self, texts: List[str]) -> List[dict]:
         if not texts:
             return []
-        x = torch.tensor([self.vocab.encode(t, self.max_len) for t in texts], dtype=torch.long)
+        if self.encoder is not None:
+            x = self.encoder.encode(list(texts))
+        else:
+            x = torch.tensor([self.vocab.encode(t, self.max_len) for t in texts], dtype=torch.long)
         out = self.model(x)
         results = []
         if self.task == "regression":

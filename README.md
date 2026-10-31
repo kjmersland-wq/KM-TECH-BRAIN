@@ -12,6 +12,9 @@ Fullt offline. Ingen API-er, ingen kreditter. / Fully offline. No APIs, no credi
 | `predict.py` | Laster `.pth`, gir prediksjon + sikkerhet (enkel og batch). Klassen `Brain` kan brukes fra Python. | Loads `.pth`, returns prediction + confidence (single and batch). `Brain` class is usable from Python. |
 | `agents.py` | Lokale agenter (`MusicAgent`, `WebAgent`) som bruker modellen + innebygd fagkunnskap. | Local agents (`MusicAgent`, `WebAgent`) using the model + built-in domain know-how. |
 | `web/` | Statisk landingsside (HTML/CSS/JS) klar for Cloudflare Pages. | Static landing page (HTML/CSS/JS), ready for Cloudflare Pages. |
+| `embeddings.py` | Encodere: `hashed` (lettvekts) og `pretrained` (sentence-transformers), med fallback. | Encoders: `hashed` (lightweight) and `pretrained` (sentence-transformers), with fallback. |
+| `evaluate.py` | Nøyaktighet per kategori, F1 og forvirringsmatrise. | Per-category accuracy, F1 and confusion matrix. |
+| `data/eval_real.csv` | 50 håndskrevne testtekster (ikke i treningsdata). | 50 hand-written test texts (not in the training data). |
 | `utils.py` | Seed, enhet, tospråklige meldinger. | Seed, device, bilingual messages. |
 | `data/example_seed.csv` | 100 håndskrevne eksempler (5 kategorier). | 100 hand-written examples (5 categories). |
 | `data/make_example_data.py` | Bygger `example_data.csv` (500 rader) = seed + malgenererte setninger. | Builds `example_data.csv` (500 rows) = seed + template-generated sentences. |
@@ -80,36 +83,84 @@ python -m http.server 8080 --directory web
 3. Framework preset: **None**. Build command: *(tom / empty)*. Build output directory: **`web`**.
 4. Deploy. (Eller / or: `npx wrangler pages deploy web`.) `web/_headers` setter sikkerhets- og cache-headere / sets security and cache headers.
 
+## Tekstforståelse / Text understanding (`--mode`)
+
+| Modus / Mode | Hva / What | Ekte-tekst-test* / real-text test* |
+|---|---|---|
+| `simple` (standard) | Egen embedding trent fra scratch. Ingen ekstra pakker. / Own embedding, no extra packages. | 58 % |
+| `hashed` | Lettvekts: hashede ord + tegn-n-gram. Kun torch, fungerer godt på norske ordformer. / Lightweight, torch only, good on Norwegian word forms. | **78 %** |
+| `pretrained` | Ferdigtrente setnings-embeddings (`sentence-transformers`, flerspråklig inkl. norsk). / Pre-trained multilingual sentence embeddings. | ikke målt her / not measured here |
+
+\* 50 håndskrevne norske/engelske tekster i `data/eval_real.csv` som modellen aldri har sett. Tallene er små og støyete. /
+50 hand-written Norwegian/English texts in `data/eval_real.csv` the model never saw. Small, noisy numbers.
+
+```bash
+python train.py                                   # simple (som før / as before)
+python train.py --mode hashed                     # anbefalt uten ekstra pakker / recommended, no extra packages
+pip install -r requirements-pretrained.txt
+python train.py --mode pretrained --download      # --download KUN første gang (laster ned ~120 MB modell) / ONLY the first time
+python train.py --mode pretrained                 # videre helt offline / fully offline afterwards
+```
+`pretrained` uten pakken installert gir en tydelig melding og faller tilbake til `simple`. En modell trent med `hashed`/`pretrained` husker selv hvilken encoder den trenger, så `predict.py`/`agents.py` fungerer uendret. Du kan også peke `--encoder-model` på en lokal mappe. /
+Without the package, `pretrained` prints a notice and falls back to `simple`. A trained model remembers its encoder, so `predict.py`/`agents.py` work unchanged. `--encoder-model` also accepts a local folder.
+
+## Mange eksempler på én gang / Adding many examples
+
+```bash
+python data.py import notes.txt --label "Blues/Roots"      # én tekst per linje / one text per line
+python data.py import samples.txt                          # linjer som: label<TAB>tekst  eller  label | tekst
+python data.py import inbox/                               # undermappe = label (bruk __ for /: Blues__Roots/)
+python data.py import post.txt --label Code/Tech --unit paragraphs   # blank linje skiller eksempler
+python data.py import inbox/ --dry-run                     # se hva som ville skjedd / preview only
+python data.py stats                                       # antall per kategori, duplikater / counts per category
+```
+Duplikater hoppes over automatisk (`--no-dedupe` for å slå av). `.csv`/`.json` kan også importeres. / Duplicates are skipped automatically.
+
+## Evaluering / Evaluation
+
+```bash
+python evaluate.py --data data/eval_real.csv --show-errors   # ANBEFALT / recommended: tekst modellen ikke har sett
+python evaluate.py                                           # val-splitten fra treningen / training val split
+```
+Viser nøyaktighet, precision/recall/F1 per kategori og forvirringsmatrise. Python: `from evaluate import evaluate`. /
+Shows accuracy, per-category precision/recall/F1 and a confusion matrix.
+Tips: legg dine egne ekte tekster i en egen fil som du aldri trener på, og evaluer mot den. / Keep a file of your own real texts that you never train on, and evaluate against it.
+
 ## Agenter / Agents
 
-En agent = nøkkelord + oppgaver ("tasks") + valgfri bruk av den trente modellen (`models/brain.pth`).
-Agentene er regelbaserte og lokale (ingen API-er) og genererer ikke fri tekst: modellen klassifiserer, agenten gir sjekklister, analyser og ideer.
-An agent = keywords + tasks + optional use of the trained model. Agents are rule-based and local (no APIs) and do not generate free text: the model classifies, the agent returns checklists, analyses and ideas.
+En agent = nøkkelord + oppgaver ("tasks") + forslag per kategori + valgfri bruk av den trente modellen.
+Agentene er lokale og regelbaserte (ingen API-er). Modellen gir kategori og sikkerhet; agenten gir **håndskrevne** forslag og neste steg.
+An agent = keywords + tasks + suggestions per category + optional use of the trained model. Local and rule-based. The model gives category and confidence; the agent gives **hand-written** suggestions and next steps.
+
+* **Norsk og engelsk:** språket oppdages automatisk og svaret kommer på samme språk. / Language is detected and the answer comes back in the same language.
+* **Sikkerhet:** kategori og prosent vises; under 50 % sier agenten ifra og ber om litt mer informasjon. / Category and confidence are shown; under 50% the agent says so and asks for more.
+* **Minne:** i `--interactive` (og via `Router`) husker agenten de 5 siste meldingene. Korte oppfølgere som «mer», «hva med SEO?» arver tema, agent og språk. `/historikk` viser minnet, `/glem` tømmer det. / In `--interactive` (and via `Router`) the agent remembers the last 5 messages; short follow-ups inherit topic, agent and language.
+* **Skrivestil:** musikktekster (blues, jazz, rock) er skrevet som en entusiast med konkrete plater og detaljer, ikke som en chatbot, og norsk er skrevet på norsk, ikke oversatt. `python agents.py --selftest` ser etter typiske AI-fraser (`BANNED` i `agents.py`). / Music text is written like an enthusiast, with specific records and details; Norwegian is written as Norwegian, not translated. `--selftest` scans for stock AI phrases.
 
 ```bash
 python agents.py --list
-python agents.py "ideas for a blues blog about Delta slide guitar"      # auto-ruting / auto-routing
-python agents.py "How do I set up Stripe checkout on Cloudflare?"
+python agents.py "ideer til en bluesblogg om slide-gitar"                 # auto-ruting, svar på norsk
+python agents.py "recommend some jazz to listen to"
 python agents.py --agent music --task lyrics "I woke up this morning; I woke up this morning; Blues walking like a man"
 python agents.py --agent music --task metadata "Slow Delta blues about a long road home."
-python agents.py --agent web --task seo "SEO for my Next.js shop"
-python agents.py --interactive
+python agents.py "SEO for nettbutikken min i Next.js"
+python agents.py --interactive                                             # med minne / with memory
+python agents.py --model models/brain.pth --selftest
 ```
 
 | Agent | Oppgaver / Tasks |
 |---|---|
-| `music` | `ideas`, `lyrics` (linjer, repetisjon, rim, AAB-struktur), `metadata` (tittel, tags, beskrivelse) |
+| `music` | `ideas`, `listen` (lyttetips for blues/jazz/rock), `lyrics` (linjer, repetisjon, rim, AAB), `metadata` (tittel, tagger, beskrivelse) |
 | `web` | `seo`, `stripe`, `nextjs`, `decision` |
 
-Ruting: modellens kategori (f.eks. Blues/Roots, Code/Tech) + nøkkelord velger agent. Uten treningsfil (`python train.py` ikke kjørt) bruker agentene kun nøkkelord. /
-Routing: the model's category plus keywords pick the agent. Without a trained model the agents use keywords only.
+Uten trent modell bruker agentene bare nøkkelord. / Without a trained model the agents use keywords only.
 
-Fra Python / From Python:
 ```python
 from agents import Router, load_brain
 router = Router(load_brain("models/brain.pth"))
-print(router.run("ideas for a blues blog", agent="music"))
+res = router.run("ideas for a jazz blog")        # res["classification"], res["sections"], res["next"]
+res = router.run("more")                         # oppfølger / follow-up, bruker minnet
 ```
 
-Ny agent / New agent: subclass `Agent` i `agents.py`, sett `name`, `keywords`, `domains`, `task_triggers`, legg til `task_<navn>()`-metoder og kall `register(MinAgent)`. /
-subclass `Agent`, set the attributes, add `task_<name>()` methods, call `register(MyAgent)`.
+Ny agent / New agent: subclass `Agent` i `agents.py`, sett `name`, `keywords`, `domains`, `task_triggers`, `suggestions`, legg til `task_<navn>(self, text, c)`-metoder og kall `register(MinAgent)`. /
+Subclass `Agent`, set the attributes, add `task_<name>(self, text, c)` methods, call `register(MyAgent)`.

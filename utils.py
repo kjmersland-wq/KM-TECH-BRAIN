@@ -7,7 +7,7 @@ import numpy as np
 import torch
 
 # Windows-konsoller bruker ofte ikke UTF-8 / Windows consoles often are not UTF-8
-for _s in (sys.stdout, sys.stderr):
+for _s in (sys.stdin, sys.stdout, sys.stderr):
     try:
         _s.reconfigure(encoding="utf-8", errors="replace")
     except Exception:

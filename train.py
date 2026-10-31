@@ -14,6 +14,7 @@ import torch
 import torch.nn as nn
 
 from data import load_records, make_loaders
+from embeddings import DEFAULT_MODEL, load_encoder
 from model import build_model
 from utils import get_device, say, set_seed
 
@@ -63,6 +64,12 @@ def parse_args(argv=None):
     p.add_argument("--min-freq", type=int, default=1)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--log-every", type=int, default=10)
+    p.add_argument("--mode", choices=["simple", "pretrained", "hashed"], default="simple",
+                   help="simple = egen embedding (standard) | hashed = lettvekts | pretrained = sentence-transformers")
+    p.add_argument("--encoder-model", default=DEFAULT_MODEL,
+                   help="Modellnavn eller lokal mappe for pretrained / model name or local folder")
+    p.add_argument("--download", action="store_true",
+                   help="Tillat nedlasting av pretrained-modellen (kun første gang) / allow one-time model download")
     return p.parse_args(argv)
 
 
@@ -71,20 +78,27 @@ def main(argv=None) -> int:
     set_seed(a.seed)
     device = get_device()
 
+    encoder, mode = load_encoder(a.mode, a.encoder_model, a.download)  # faller tilbake til simple / may fall back
     try:
         records = load_records(a.data, a.text_col, a.label_col)
         train_loader, val_loader, vocab, classes = make_loaders(
-            records, a.task, a.val_split, a.batch_size, a.max_len, a.min_freq, a.seed)
+            records, a.task, a.val_split, a.batch_size, a.max_len, a.min_freq, a.seed, encoder)
     except (FileNotFoundError, KeyError, ValueError) as e:
         say(f"FEIL ved lasting av data: {e}", f"ERROR loading data: {e}")
         return 1
 
-    say(f"Data: {len(records)} eksempler, {len(classes)} klasser, vokabular {len(vocab)}, enhet: {device}",
-        f"Data: {len(records)} examples, {len(classes)} classes, vocab {len(vocab)}, device: {device}")
+    vocab_txt = f"vokabular {len(vocab)}" if vocab else f"vektorer {encoder.dim}d"
+    say(f"Data: {len(records)} eksempler, {len(classes)} klasser, modus {mode}, {vocab_txt}, enhet: {device}",
+        f"Data: {len(records)} examples, {len(classes)} classes, mode {mode}, "
+        f"{'vocab ' + str(len(vocab)) if vocab else 'vectors ' + str(encoder.dim) + 'd'}, device: {device}")
 
-    config = dict(kind="text", vocab_size=len(vocab), num_outputs=len(classes) if a.task == "classification" else 1,
-                  embed_dim=a.embed_dim, hidden_sizes=a.hidden, dropout=a.dropout,
-                  use_batchnorm=not a.no_batchnorm, task=a.task)
+    n_out = len(classes) if a.task == "classification" else 1
+    if encoder is None:
+        config = dict(kind="text", vocab_size=len(vocab), num_outputs=n_out, embed_dim=a.embed_dim,
+                      hidden_sizes=a.hidden, dropout=a.dropout, use_batchnorm=not a.no_batchnorm, task=a.task)
+    else:
+        config = dict(kind="dense", input_size=encoder.dim, num_outputs=n_out, hidden_sizes=a.hidden,
+                      dropout=a.dropout, use_batchnorm=not a.no_batchnorm, task=a.task)
     model = build_model(config).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     say(f"Modell opprettet ({n_params:,} parametere)", f"Model created ({n_params:,} parameters)")
@@ -121,7 +135,10 @@ def main(argv=None) -> int:
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     torch.save({"model_state": {k: v.cpu() for k, v in best_state.items()}, "config": config,
-                "vocab": vocab.itos, "classes": classes, "max_len": a.max_len,
+                "vocab": vocab.itos if vocab else None, "classes": classes, "max_len": a.max_len,
+                "mode": mode, "encoder": encoder.spec() if encoder else None,
+                "seed": a.seed, "val_split": a.val_split, "data": a.data,
+                "text_col": a.text_col, "label_col": a.label_col,
                 "best_epoch": best_epoch, "history": history}, out)
 
     acc_txt = f", val-nøyaktighet/accuracy {best['val_acc']:.3f}" if best["val_acc"] is not None else ""

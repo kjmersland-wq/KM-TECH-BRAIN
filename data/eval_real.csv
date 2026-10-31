@@ -1,0 +1,51 @@
+text,label
+"Spilte inn en ny låt i åpen D-stemning med slide og en gammel resonator, tenkte på Skip James hele veien",Blues/Roots
+"Anyone know a good tab for 'Cross Road Blues'? I can get the Clapton version but I want the Johnson original with the stomping rhythm",Blues/Roots
+"Turnaround in the last two bars of a twelve bar, should I end on the V chord or go back to the I?",Blues/Roots
+"Mississippi John Hurt fingerstyle thumb pattern: how do you keep the bass steady while the melody moves?",Blues/Roots
+"Vi spiller på bluesfestivalen i sommer, mye Chicago-blues og litt Texas shuffle med Hammond-orgel",Blues/Roots
+"Which harmonica key for a song in A minor? Second position on a D harp, or third position on a G?",Blues/Roots
+"Sonny Boy Williamson recorded for Chess in the fifties; his harp tone on 'Help Me' is unmistakable",Blues/Roots
+"Gammel country blues fra Piedmont, med Blind Blake sitt ragtime-fingerspill som referanse",Blues/Roots
+"The lyrics follow the classic AAB pattern: a line, its repeat, then the answer about the woman who left town",Blues/Roots
+"Hvilken strengetykkelse bruker dere på akustisk til slide? Jeg har prøvd 12-53 men det blir stramt",Blues/Roots
+"My Next.js build fails on Vercel with 'Module not found: Can't resolve fs' when I import a server util in a client component",Code/Tech
+"Hvordan setter jeg opp en Postgres-database med Prisma og kjører migrasjoner i CI på GitHub Actions?",Code/Tech
+"Why does useEffect run twice in development with React 18 strict mode and how do I stop duplicate fetches?",Code/Tech
+"TypeScript sier 'Type undefined is not assignable to type string' selv om jeg har sjekket for null",Code/Tech
+"Docker container exits immediately after start, logs show 'permission denied' on the mounted volume",Code/Tech
+"Jeg vil kjøre en språkmodell lokalt med PyTorch, hvor mye VRAM trenger jeg for 7B med 4-bit kvantisering?",Code/Tech
+"git rebase --onto to move a feature branch off a stale parent without dragging along the old commits",Code/Tech
+"CORS error when my frontend on localhost:3000 calls the FastAPI backend on port 8000, preflight returns 405",Code/Tech
+"Cloudflare Pages build fails: 'npm ERR! missing script: build'. Do I need a build command for a plain static folder?",Code/Tech
+"Memory leak in my Node server: heap keeps growing after each websocket connection closes",Code/Tech
+"We drove through the Delta to Clarksdale, ate catfish and hushpuppies, and watched the sunset from a juke joint porch",American Culture
+"Thanksgiving i Ohio hos vertsfamilien: kalkun, tranebærsaus og amerikansk fotball på TV hele ettermiddagen",American Culture
+"Why do Americans tip twenty percent, and is it really expected at a diner on Route 66?",American Culture
+"Fourth of July in a small Georgia town: parade, church picnic, fireworks over the lake and sweet tea everywhere",American Culture
+"Hva er forskjellen på Texas barbecue og Carolina barbecue, og hvorfor krangler folk om det?",American Culture
+"A road trip from Memphis to New Orleans through Mississippi, stopping at Graceland and a roadside pecan stand",American Culture
+"High school football on Friday night is practically a religion in West Texas, the whole town shows up",American Culture
+"Mardi Gras krewes, king cake and brass bands: a beginner's guide to Carnival season in New Orleans",American Culture
+"Det amerikanske valgsystemet med valgmenn er vanskelig å forstå for oss i Norge",American Culture
+"Waffle House at three in the morning is its own kind of Southern institution",American Culture
+"Hvordan kan jeg tjene penger på bluesbloggen min uten å fylle den med annonser?",Business/Monetization
+"Should I price my guitar lesson membership at 9 or 19 dollars a month, and offer an annual discount?",Business/Monetization
+"Our Stripe checkout converts at one percent; the cart abandonment rate is high on mobile",Business/Monetization
+"Selger du online kurs bør du ha en e-postliste først, ellers må du betale for annonser hver gang",Business/Monetization
+"How do sync licensing deals work for independent musicians, and what share of royalties do I keep?",Business/Monetization
+"Affiliate links for gear reviews: Amazon pays three percent, direct brand programs pay ten to fifteen",Business/Monetization
+"Monthly recurring revenue is flat, churn is five percent; should I raise prices or focus on retention?",Business/Monetization
+"Vi lanserer en Patreon for podcasten med bonusepisoder og tidlig tilgang for betalende støttespillere",Business/Monetization
+"What is a reasonable customer acquisition cost for a small SaaS selling to freelancers?",Business/Monetization
+"Merch margins: how much should a band charge for a t-shirt that costs eight dollars to print?",Business/Monetization
+"Jeg sitter foran skjermen ti timer om dagen og får vondt i nakken, hvilke øvelser hjelper?",Health/Productivity
+"How do I stop procrastinating on my side project? I keep rewriting the to-do list instead of doing the work",Health/Productivity
+"Sleep tracker says I only get 40 minutes of deep sleep; does evening caffeine matter that much?",Health/Productivity
+"Kan jeg kombinere pomodoro og time blocking, eller blir det for rigid til kreativt arbeid som låtskriving?",Health/Productivity
+"Morning routine that actually sticks: water, ten minutes of stretching, then the hardest task before email",Health/Productivity
+"Jeg ble utbrent etter et år med tre jobber, hva er de første tegnene og hva bør jeg gjøre?",Health/Productivity
+"Is intermittent fasting compatible with strength training three times a week?",Health/Productivity
+"Tips for å huske å ta pauser fra gitaren så jeg ikke får senebetennelse i håndleddet",Health/Productivity
+"Meditation apps helped my anxiety a little, but a daily walk without my phone helped more",Health/Productivity
+"Weekly review template: wins, blockers, top three priorities for next week, and one thing to drop",Health/Productivity
